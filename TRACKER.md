@@ -12,14 +12,25 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 
 | Phase | Status | Started | Target exit |
 |---|---|---|---|
-| 0 — Spikes | `[~]` in progress | 2026-08-09 | 4 spikes green |
-| 1 — Functional MVP | `[ ]` not started | — | §29.2 criteria met |
+| 0 — Spikes | `[ ]` not started (see note) | — | 4 spikes green |
+| 1 — Functional MVP | `[~]` in progress — M1 underway | 2026-08-09 | §29.2 criteria met |
 | 2 — Content & speed | `[ ]` not started | — | — |
 | 3 — Controlled operations | `[ ]` not started | — | — |
 | 4 — Windows integration | `[ ]` not started | — | — |
 | 5 — Hardening | `[ ]` not started | — | — |
 
 ---
+
+> **Note on sequencing:** M1's path layer (T01/T02/T04/T05/T10) was built ahead
+> of the Phase 0 spikes. That's a deliberate, narrow exception, not an
+> abandonment of the gate: the path/canonicalization work is well-understood
+> .NET + Win32 (low technical risk, and it's a dependency of everything else
+> including the spikes' own test harnesses), whereas S1–S4 exist specifically
+> to de-risk the *unknowns* — MFT parsing, WPF at 1M rows, Gemma 3 4B grammar
+> reliability, sqlite-vec filtered KNN speed. **Do not start M2 (SQLite/walk
+> indexer) or go further into M5 (WPF grid) or M8 (LLM) before S1–S4 are
+> green** — those milestones are exactly where a red spike would force a
+> rework, and the whole point of Phase 0 is to find that out cheaply.
 
 ## Phase 0 — Spikes (risk validation, throwaway code OK)
 
@@ -39,17 +50,17 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 ### Milestone M1 — Foundation & Filesystem
 *Goal: enumerate/display a directory faster than Explorer, on a canonical, tested path layer.*
 
-- [x] **T01** Repo scaffold: solution, `Directory.Build.props`, `Directory.Packages.props`, `.editorconfig`, `.gitignore`, git init
-- [x] **T02** `Zara.Core`: `CanonicalPath`, `FileId`, `VolumeRef`, `FileEntry` domain types
+- [x] **T01** Repo scaffold: solution, `Directory.Build.props`, `Directory.Packages.props`, `.editorconfig`, `.gitignore`, git init — 2026-08-09
+- [x] **T02** `Zara.Core`: `CanonicalPath`, `FileId`, `VolumeRef`, `FileEntry` domain types — 2026-08-09
 - [ ] **T03** `Zara.Core`: `Result<T>` / `ZaraError` / `ErrorCode` — shared error model
-- [x] **T04** `Zara.Filesystem`: `PathCanonicalizer` (extended-length prefix, `GetFinalPathNameByHandle`)
-- [x] **T05** `Zara.Filesystem`: `PathValidator` + the 200-case adversarial test suite (§27.1 PATH section)
+- [x] **T04** `Zara.Filesystem`: `PathCanonicalizer` (extended-length prefix, `GetFinalPathNameByHandle`) — 2026-08-09. Hand-rolled `DllImport` interop (`Interop/NativeMethods.cs`), not CsWin32 — see decision log.
+- [x] **T05** `Zara.Filesystem`: `PathValidator` + adversarial test suite (§27.1 PATH section) — 2026-08-09. 74 tests in `Zara.Filesystem.Tests` across `PathSyntaxTests` (pure, no I/O), `PathCanonicalizerTests`, `PathValidatorTests` (real temp-filesystem integration). Caught and fixed a real bug: `\\?\`-prefixed paths bypass OS `..`-normalization, so `CanonicalizeExisting` now normalizes via `Path.GetFullPath` before prefixing.
 - [ ] **T06** `Zara.Filesystem`: `KnownFolders` wrapper (`SHGetKnownFolderPath`)
 - [ ] **T07** `Zara.Filesystem`: `DirectoryEnumerator` via `NtQueryDirectoryFile` (P/Invoke, pooled buffers)
 - [ ] **T08** `Zara.Filesystem` fallback: `FindFirstFileEx` enumerator for non-NTFS/denied paths
 - [ ] **T09** Benchmark: 100k-file directory listing < 400ms, < 20MB allocated (`benchmarks/`)
-- [ ] **T10** Architecture test (`NetArchTest`): illegal project references fail the build
-- [ ] **M1 exit** All of the above green; `dotnet test` clean on fresh clone
+- [x] **T10** Architecture test (`NetArchTest`): illegal project references fail the build — 2026-08-09. `Zara.ArchitectureTests` enforces the §8.2 table for the two projects that exist; commented stubs mark where to extend it per future milestone.
+- [ ] **M1 exit** All of the above green; `dotnet test` clean on fresh clone — **74+6+2=82/82 tests passing so far; T03/T06/T07/T08/T09 remain before M1 exits**
 
 ### Milestone M2 — Storage & Walk Indexer
 - [ ] **T11** `Zara.Storage`: SQLite bootstrap, WAL pragmas, `MigrationRunner`, `001_initial.sql` (files/volumes/folder_stats tables from §22, minus content/vector tables)
@@ -121,11 +132,23 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | Date | Decision | Why |
 |---|---|---|
 | 2026-08-09 | Target `net9.0-windows` (not `net10.0-windows`) despite SDK 10 being installed | .NET 9 is the LTS release the architecture doc was written against; WPF/WindowsAppSDK third-party package support lags on brand-new TFMs. Revisit when 10 is LTS-equivalent and the ecosystem catches up. |
+| 2026-08-09 | Hand-rolled `[DllImport]` for `CreateFileW`/`GetFinalPathNameByHandleW` instead of CsWin32 codegen | `LibraryImport` (source-generated) doesn't support `StringBuilder` marshalling, which `GetFinalPathNameByHandleW` needs; classic `DllImport` is a well-trodden, easy-to-audit pattern for this handful of calls. `Microsoft.Windows.CsWin32` stays in `Directory.Packages.props` for when a larger Win32/COM surface (shell interop at M6) makes generated bindings worth it. |
+| 2026-08-09 | `dotnet new sln` produced `Zara.slnx` (the new XML solution format), not `Zara.sln` | Default in the .NET 9/10 SDK; works identically with `dotnet build`/`test`/`sln add`. No action needed unless a tool in the chain later requires the classic format. |
+| 2026-08-09 | `CanonicalizeExisting` normalizes via `Path.GetFullPath` before applying the `\\?\` prefix | A `\\?\`-prefixed path is passed to Win32 verbatim — the OS does NOT collapse `.`/`..` segments in it (that's the tradeoff for bypassing `MAX_PATH`). Prefixing a raw path containing `..` and calling `CreateFileW` fails whenever an intermediate segment doesn't itself exist on disk, even though the fully-resolved target does. Found by `Validate_DeepDotDotTraversal_ResolvesAndIsCheckedAgainstRoot` in T05's test suite. |
 
 ---
 
 ## Notes for the next session
 
 - Start at the first `[ ]` in M1, top to bottom — dependencies are ordered.
+  Next up: **T03** (`Result<T>`/`ZaraError`), then **T06** (`KnownFolders`),
+  then **T07** (`DirectoryEnumerator`) — T07 is the one to slow down for, it's
+  the performance-critical piece M1's exit criteria (§29.2 #1–2) hinge on.
 - Run `dotnet test` before marking any task `[x]`.
 - If a task reveals the architecture doc is wrong, fix ARCHITECTURE.md in the same commit and log it above — don't let drift accumulate.
+- Current repo state: `Zara.sln`(x) has 5 projects (`Zara.Core`, `Zara.Filesystem`,
+  `Zara.Core.Tests`, `Zara.Filesystem.Tests`, `Zara.ArchitectureTests`), 82/82
+  tests passing, one commit on `master`. `dotnet build` / `dotnet test` both
+  clean from a fresh clone.
+- Phase 0 spikes (S1–S4) are still outstanding — see the sequencing note
+  above M1's checklist. Fit them in before M2/M5/M8 go deep.
