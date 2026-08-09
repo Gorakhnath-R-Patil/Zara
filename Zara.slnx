@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Zara.Scenarios/Zara.Scenarios.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Zara.Core/Zara.Core.csproj" />
     <Project Path="src/Zara.Filesystem/Zara.Filesystem.csproj" />
