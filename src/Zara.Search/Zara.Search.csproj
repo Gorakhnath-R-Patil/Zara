@@ -4,4 +4,13 @@
     <ProjectReference Include="..\Zara.Core\Zara.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Query/ stays storage-agnostic (produces SQL fragments only). The
+         Analytics/ namespace (duplicate/stale-file/rollup detection) runs
+         its own aggregate queries and needs a real connection type — see
+         IDuplicateFinder's remarks for why that's a deliberate difference,
+         not an inconsistency. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
 </Project>
