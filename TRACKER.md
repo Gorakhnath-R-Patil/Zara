@@ -13,7 +13,7 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | Phase | Status | Started | Target exit |
 |---|---|---|---|
 | 0 — Spikes | `[ ]` not started (see note) | — | 4 spikes green |
-| 1 — Functional MVP | `[~]` in progress — **M1 + M2 complete**, M3 next | 2026-08-09 | §29.2 criteria met |
+| 1 — Functional MVP | `[~]` in progress — **M1 + M2 + M3 complete**, M4 next | 2026-08-09 | §29.2 criteria met |
 | 2 — Content & speed | `[ ]` not started | — | — |
 | 3 — Controlled operations | `[ ]` not started | — | — |
 | 4 — Windows integration | `[ ]` not started | — | — |
@@ -83,12 +83,16 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 
 **M2 exit:** all 6 tasks done, **184/184 tests passing** across all 8 test projects. The standout test is `ScanOrchestratorTests.ScanAsync_InterruptedThenResumed_CompletesFully_WithoutRewalkingFinishedChildren` — it cancels a real scan mid-flight via a synchronous progress callback, resumes it, and asserts (via a `CountingWalkScanner` spy) that every child directory was walked **exactly once** across both runs combined, not zero and not two.
 
-### Milestone M3 — Name Search
-- [ ] **T17** `Zara.Search`: `NameIndex` — trigram map + roaring bitmap + folded-name arena (§12.2)
-- [ ] **T18** `Zara.Search`: incremental `Upsert`/`Remove`, index warms during scan (search usable mid-scan)
-- [ ] **T19** `Zara.Search`: `DslLexer` / `DslParser` for the structured query grammar (§12.3)
-- [ ] **T20** `Zara.Search`: `QueryPlanner` + `SelectivityEstimator` (metadata-only path, no FTS/vector yet)
-- [ ] **T21** Bench B06/B07: name search p95 < 20ms, structured query p95 < 25ms @ 500k files
+### Milestone M3 — Name Search — **[x] COMPLETE, 2026-08-09**
+- [x] **T17** `Zara.Search`: `NameIndex` — trigram map (plain `Dictionary<string, HashSet<int>>`, not RoaringBitmap — see decision log) + folded-name parallel arrays (§12.2)
+- [x] **T18** `Zara.Search`: incremental `Upsert`/`Remove`, index warms during scan — 19 tests including one that upserts/searches/upserts-more interleaved, proving mid-build search correctness
+- [x] **T19** `Zara.Search`: `DslLexer` / `DslParser` for the structured query grammar (§12.3). **Scoping decision:** implicit-AND of field:value predicates + `NOT`/`-` negation; no parenthesized boolean grouping or general `OR` — see `DslParser`'s class remarks for the full rationale. 55 tests.
+- [x] **T20** `Zara.Search`: `QueryPlanner` + `SelectivityEstimator` (metadata-only path, no FTS/vector yet). **Scoping decision:** `path:`/`in:`/`dup:`/`empty:`/`content:` parse successfully but are surfaced via `QueryPlan.UnsupportedPredicates` rather than silently ignored — none are executable against the current schema (no stored full path; no dup/empty aggregates yet; no FTS). 26 tests, most executing the generated SQL against a **real** SQLite database, not just inspecting the WHERE-clause string.
+- [x] **T21** Bench (`benchmarks/Zara.Scenarios -- search 500000`, B06/B07): name search p95 < 20ms, structured query p95 < 25ms @ 500k. **Real numbers, two real bugs found and fixed by this benchmark:**
+  - **NameIndex** — first run: p95 **20.55ms** (FAIL, just over budget). Root cause: `Search`'s `OrderBy().Take()` still performs a full O(n log n) sort even though only the top 50 are needed — LINQ's `Take` does not turn `OrderBy` into a partial sort. For an unselective query (a common word matching ~50k of 500k entries), that's a real cost. **Fix:** replaced with a bounded sorted list capped at `maxResults` (O(n log k) instead of O(n log n), most candidates rejected in O(1) once the list is full). **After:** p95 **14.28–14.49ms** — PASS, with headroom, and the fix's own unit tests (all 81) stayed green throughout.
+  - **QueryPlanner** — first run: p95 **83.88ms** (FAIL, 3× over budget). Root cause: the "Relevance" sort default fell back to `ORDER BY modified_utc DESC`, which isn't covered by whatever index served the query's filter predicates (e.g. `ix_files_ext_size`) — SQLite had to filesort the entire filtered set before applying `LIMIT`. **Fix:** default sort is now no `ORDER BY` at all (free, natural rowid order) rather than a sort with no real meaning yet (there's no relevance signal to sort by before Phase 2's FTS/vector scoring exists) — an explicit `sort:modified` still costs what it costs, as a deliberate tradeoff instead of a hidden default one. **After:** p95 **0.06ms** — a ~1,400× improvement, PASS with enormous headroom.
+
+**M3 exit:** all 5 tasks done, **265/265 tests passing** across 9 test projects. T21 is the standout result of the whole milestone: it's the first benchmark this session that actually FAILED on first run, and both failures led to real root-cause fixes (not benchmark tuning) that are now permanently reflected in `NameIndex.Search` and `QueryPlanner.BuildOrderBy` — exactly what "measure before optimizing" is for.
 
 ### Milestone M4 — Deterministic Analytics
 - [ ] **T22** `DuplicateFinder` — quick-hash pre-filter → BLAKE3 confirm
@@ -156,47 +160,54 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | 2026-08-09 | `FileIndexWriter` silently skips (counts, doesn't throw) any entry with a null `Frn` | Only `Win32DirectoryEnumerator` (the non-NTFS/denied-path fallback, T08) ever produces one, and there's no other stable identity to upsert on for such an entry. This is a real, documented gap for non-NTFS volumes — not yet a problem since M1–M2 target the primary NTFS/`NtDirectoryEnumerator` path exclusively; revisit when Phase 4's network-drive support needs it. |
 | 2026-08-09 | `path_hash` is `XxHash3.HashToUInt64` over the UTF-8 bytes of the **uppercased** canonical path | Matches NTFS's own case-insensitive identity semantics (same reasoning as `CanonicalPath`'s `OrdinalIgnoreCase` comparer, §10.1) — two paths differing only in case must hash identically. `System.IO.Hashing.XxHash3` (added .NET 8) rather than a hand-rolled implementation. |
 | 2026-08-09 | `WriteQueue` only implements `IAsyncDisposable`, not `IDisposable` | Caught at compile time in `benchmarks/Zara.Scenarios/ScanScenario.cs` — a plain `using var writeQueue = new WriteQueue(...)` doesn't compile. Synchronous call sites (like a console benchmark's `Main`) need an explicit `writeQueue.DisposeAsync().AsTask().GetAwaiter().GetResult()` instead. Not a bug, just a reminder for the next synchronous caller. |
+| 2026-08-09 | `NameIndex`'s trigram candidate sets are plain `Dictionary<string, HashSet<int>>`, not RoaringBitmap | No vetted RoaringBitmap package was in the solution, and T21's own note said to measure a simpler structure first. Measured: p95 14.3–14.5ms at 500k entries, comfortably under the 20ms target once top-K selection was bounded (see below) — the simpler structure was sufficient. Revisit only if a future benchmark at a larger scale (the `extreme` 5M-file corpus in §32.1) shows otherwise. |
+| 2026-08-09 | `DslParser` supports implicit-AND of `field:value` predicates + `NOT`/`-` negation, but not parenthesized boolean grouping or general `OR` | A full recursive-descent boolean expression parser (precedence climbing for `AND`/`OR`/`NOT`/`(...)`) is a meaningfully bigger, separate piece of work than the rest of T19. The shipped subset covers the large majority of realistic queries. `type:image\|video`'s `\|` is a fixed field-scoped enumeration, not general OR — don't confuse the two when this gets revisited. |
+| 2026-08-09 | `QueryPlanner` surfaces `path:`/`in:`/`dup:`/`empty:`/`content:` as `UnsupportedPredicates` rather than executing them | None are executable against the current schema: no full path is stored per row (M2's `parent_id`-left-NULL decision), no duplicate/empty aggregates exist yet (M4's job), and there's no FTS5 table (Phase 2). Parsing them now keeps the DSL surface stable — a query string written today won't need to change syntax when these land; only `QueryPlanner.Plan` needs to grow to actually honor them. |
+| 2026-08-09 | `NameIndex.Search`'s top-K selection was rewritten from `OrderBy().Take()` to a bounded sorted list | **Found by T21's 500k-scale benchmark, not by inspection.** LINQ's `OrderBy` must fully sort before `Take` can pull anything from it — an unselective query (~50k candidates) was paying a full O(n log n) sort to keep only the top 50. Fixed with a manually-maintained sorted `List<T>` capped at `maxResults` (O(n log k), most candidates rejected in O(1) once full). p95 dropped from 20.55ms (FAIL) to 14.28ms (PASS). All 81 `Zara.Search.Tests` stayed green across the change — the fix is a strict internal optimization, not a behavior change. |
+| 2026-08-09 | `QueryPlanner`'s default sort ("Relevance", i.e. no explicit `sort:`) produces no `ORDER BY` clause at all, not `ORDER BY modified_utc DESC` | **Also found by T21.** "Relevance" has no real meaning before Phase 2's FTS/vector scoring exists, so defaulting it to a sort that isn't covered by the filtering index (forcing SQLite to filesort the whole matched set before `LIMIT`) was paying real cost for a default nobody asked for. p95 dropped from 83.88ms (FAIL, 3× over budget) to 0.06ms (PASS) — a ~1,400× improvement. An explicit `sort:modified` still costs a filesort when the caller actually wants recency order; that's now a deliberate choice, not a hidden default one. |
 
 ---
 
 ## Notes for the next session
 
-- **M1 and M2 are both complete.** Start at the first `[ ]` in **M3** (Name
-  Search): T17 (`NameIndex` — trigram map + roaring bitmap + folded-name
-  arena, §12.2), then T18 (incremental upsert/remove, index warms during
-  scan), then T19 (`DslLexer`/`DslParser` for the structured query grammar,
-  §12.3), then T20 (`QueryPlanner`), then T21 (bench: name search p95 <20ms
-  @ 500k files).
-  - **Before T17:** consider whether a `RoaringBitmap` implementation needs
-    to be brought in (no package for it is in `Directory.Packages.props`
-    yet) or hand-rolled at a scale where a plain `HashSet<int>`/sorted-array
-    intersection is good enough for now — §32.1's `medium` corpus (500k
-    files) is the real target, and a naive approach might already clear
-    T21's 20ms bar at that scale without needing true Roaring bitmaps yet.
-    Measure before reaching for the more complex structure.
-  - `files.parent_id` is still NULL (see decision log) — T17 doesn't need it
-    (name search works off `name_folded` + `path_hash`, not parent chains),
-    but if anything in M3 starts wanting path reconstruction, that's the
-    signal to go back and populate it rather than working around its absence.
+- **M1, M2, and M3 are all complete.** Start at the first `[ ]` in **M4**
+  (Deterministic Analytics): T22 (`DuplicateFinder` — quick-hash pre-filter
+  via `files.quick_hash`/`size_bytes`, then a BLAKE3 confirm pass; note
+  `quick_hash` is a schema column that nothing populates yet — T22 is where
+  that needs to start happening, likely as an addition to `FileIndexWriter`
+  or a follow-up pass), T23 (`SizeRollup` — incremental `folder_stats`
+  maintenance; this is also where `parent_id` being NULL, deferred since M2,
+  will finally need to be revisited, since folder rollups are inherently a
+  parent-chain operation), T24 (`StaleFileFinder`, `EmptyFolderFinder`).
+  - M4 is a good milestone to also close the loop on `QueryPlanner`'s
+    `UnsupportedPredicates` for `dup:`/`empty:` (T20's decision log entry) —
+    once `DuplicateFinder`/`SizeRollup` exist, those two predicates can
+    become real WHERE-clause fragments instead of parse-only stubs.
 - Run `dotnet test` before marking any task `[x]`; for anything
-  performance-sensitive, prefer getting a real number (like T09/T16's
-  benchmark runs) over an assumption — it's cheap on this hardware and has
-  already caught one real correctness issue (T04's `\\?\`-prefix bug) and
-  quantified one real, expected regression (T09's fallback allocation).
+  performance-sensitive, get a real number rather than assume one — T21
+  alone caught two real bugs (a full-sort-instead-of-top-K in `NameIndex`,
+  and an uncovered-index filesort in `QueryPlanner`'s default sort) that no
+  amount of code review would have surfaced without actually running at
+  500k-entry scale. That's now the established pattern for every
+  performance-sensitive piece of code in this repo — trust it.
 - If a task reveals the architecture doc is wrong, fix ARCHITECTURE.md in the same commit and log it above — don't let drift accumulate.
-- Current repo state: solution has **13 projects** (7 `src/`, includes
-  `Zara.Storage`, `Zara.Volumes`, `Zara.Indexing`; 5 `tests/`; 1
-  `benchmarks/Zara.Scenarios`), **184/184** tests passing, four commits on
+- Current repo state: solution has **16 projects** (8 `src/` — adds
+  `Zara.Search`; 7 `tests/` — adds `Zara.Search.Tests`; 1
+  `benchmarks/Zara.Scenarios`), **265/265** tests passing, five commits on
   `master`. `dotnet build` / `dotnet test` both clean from a fresh clone.
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- list
     <fileCount>` reproduces T09's directory-listing numbers.
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- scan
     <totalFiles> <childDirCount>` reproduces T16's full-scan and
     interrupt/resume numbers (defaults: 100,000 files / 20 shards).
-- Phase 0 spikes (S1–S4) are still outstanding. M2 shipped without them per
-  the sequencing note (below) — T13's real-junction test and T07's
-  from-scratch-correct NT struct interop are exactly the kind of evidence
-  that note said would lower S1's risk, and they did. **M3 is still fine to
-  proceed without the spikes** (name index construction is ordinary
-  algorithms work, not a new unknown), but do not start M5 (WPF at scale)
+  - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- search
+    <totalFiles>` reproduces T21's name-search and structured-query latency
+    numbers (default: 500,000).
+- Phase 0 spikes (S1–S4) are still outstanding. M2/M3 shipped without them
+  per the sequencing note (below) — T13's real-junction test, T07's
+  from-scratch-correct NT struct interop, and T21's real 500k-scale
+  benchmark catching two genuine bugs are exactly the kind of evidence that
+  note said would lower S1's risk, and it keeps doing so. **M4 is still
+  fine to proceed without the spikes** (analytics work is ordinary
+  algorithms + SQL, not a new unknown), but do not start M5 (WPF at scale)
   or M8 (LLM grammar reliability) before S2/S3 respectively are run for real.

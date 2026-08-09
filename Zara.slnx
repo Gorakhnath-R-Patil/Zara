@@ -10,6 +10,9 @@
     <Project Path="src/Zara.Indexing/Zara.Indexing.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="src/Zara.Search/Zara.Search.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Zara.Storage/Zara.Storage.csproj">
       <Platform Project="x64" />
     </Project>
@@ -24,6 +27,9 @@
     <Project Path="tests/Zara.Core.Tests/Zara.Core.Tests.csproj" />
     <Project Path="tests/Zara.Filesystem.Tests/Zara.Filesystem.Tests.csproj" />
     <Project Path="tests/Zara.Indexing.Tests/Zara.Indexing.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tests/Zara.Search.Tests/Zara.Search.Tests.csproj">
       <Platform Project="x64" />
     </Project>
     <Project Path="tests/Zara.Storage.Tests/Zara.Storage.Tests.csproj">

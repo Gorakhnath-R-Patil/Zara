@@ -14,6 +14,13 @@ if (args.Length > 0 && string.Equals(args[0], "scan", StringComparison.OrdinalIg
     return 0;
 }
 
+if (args.Length > 0 && string.Equals(args[0], "search", StringComparison.OrdinalIgnoreCase))
+{
+    int searchTotalFiles = args.Length > 1 && int.TryParse(args[1], out int stf) ? stf : 500_000;
+    SearchScenario.Run(searchTotalFiles);
+    return 0;
+}
+
 // B12 (ARCHITECTURE.md §32.2): directory listing at scenario scale.
 // T09's exit bar: 100k-file directory listing < 400ms, < 20MB allocated.
 //
