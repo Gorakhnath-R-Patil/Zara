@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Zara.Core/Zara.Core.csproj" />
+    <Project Path="src/Zara.Filesystem/Zara.Filesystem.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Zara.ArchitectureTests/Zara.ArchitectureTests.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tests/Zara.Core.Tests/Zara.Core.Tests.csproj" />
+    <Project Path="tests/Zara.Filesystem.Tests/Zara.Filesystem.Tests.csproj" />
+  </Folder>
+</Solution>

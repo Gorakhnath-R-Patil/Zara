@@ -1,0 +1,36 @@
+## .NET / Visual Studio
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+*.dbmdl
+*.dbproj.schemaview
+
+## Rider / VSCode
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+## Test / benchmark output
+TestResults/
+BenchmarkDotNet.Artifacts/
+*.trx
+*.coverage
+*.coveragexml
+
+## Local data Zara creates at runtime (never commit user data)
+**/App_Data/
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.jsonl
+
+## Corpus generator output (large, regenerated, not source)
+tools/corpus-gen/output/
+
+## OS
+Thumbs.db
+desktop.ini
