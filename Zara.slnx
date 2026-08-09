@@ -7,6 +7,12 @@
   <Folder Name="/src/">
     <Project Path="src/Zara.Core/Zara.Core.csproj" />
     <Project Path="src/Zara.Filesystem/Zara.Filesystem.csproj" />
+    <Project Path="src/Zara.Storage/Zara.Storage.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Zara.Volumes/Zara.Volumes.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Zara.ArchitectureTests/Zara.ArchitectureTests.csproj">
@@ -14,5 +20,11 @@
     </Project>
     <Project Path="tests/Zara.Core.Tests/Zara.Core.Tests.csproj" />
     <Project Path="tests/Zara.Filesystem.Tests/Zara.Filesystem.Tests.csproj" />
+    <Project Path="tests/Zara.Storage.Tests/Zara.Storage.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tests/Zara.Volumes.Tests/Zara.Volumes.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
 </Solution>
