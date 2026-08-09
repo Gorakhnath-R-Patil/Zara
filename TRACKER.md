@@ -13,7 +13,7 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | Phase | Status | Started | Target exit |
 |---|---|---|---|
 | 0 — Spikes | `[ ]` not started (see note) | — | 4 spikes green |
-| 1 — Functional MVP | `[~]` in progress — **M1 complete**, M2 next | 2026-08-09 | §29.2 criteria met |
+| 1 — Functional MVP | `[~]` in progress — **M1 + M2 complete**, M3 next | 2026-08-09 | §29.2 criteria met |
 | 2 — Content & speed | `[ ]` not started | — | — |
 | 3 — Controlled operations | `[ ]` not started | — | — |
 | 4 — Windows integration | `[ ]` not started | — | — |
@@ -71,13 +71,17 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 > elevated volume handle, plus USN journal semantics). Don't count S1 as done;
 > do treat it as lower-risk than it looked on 2026-08-09.
 
-### Milestone M2 — Storage & Walk Indexer
-- [ ] **T11** `Zara.Storage`: SQLite bootstrap, WAL pragmas, `MigrationRunner`, `001_initial.sql` (files/volumes/folder_stats tables from §22, minus content/vector tables)
-- [ ] **T12** `Zara.Storage`: `SqliteConnectionFactory` + single-writer `WriteQueue`
-- [ ] **T13** `Zara.Volumes` (fallback path): `WalkScanner` — BFS traversal, skip-list applied pre-descent, reparse-point guard
-- [ ] **T14** `Zara.Indexing`: `ScanOrchestrator` — batched 5k-row transactions, checkpointing, progress events
-- [ ] **T15** `Zara.Indexing`: `ScanCheckpointStore` — resume a killed scan without restarting
-- [ ] **T16** Bench: `small` corpus (100k files) full scan wall time + resumability under kill -9
+### Milestone M2 — Storage & Walk Indexer — **[x] COMPLETE, 2026-08-09**
+- [x] **T11** `Zara.Storage`: SQLite bootstrap, WAL pragmas, `MigrationRunner`, `001_initial.sql` (files/volumes/folder_stats tables from §22, minus content/vector tables)
+- [x] **T12** `Zara.Storage`: `SqliteConnectionFactory` + single-writer `WriteQueue` — verified against 200 concurrent writers, zero `SQLITE_BUSY`
+- [x] **T13** `Zara.Volumes` (fallback path): `WalkScanner` — BFS via explicit queue (not recursion), `DefaultSkipList` applied pre-descent (§10.5's full hard-exclusion list), reparse points never auto-descended (verified against a **real** `mklink /J` junction, no elevation needed)
+- [x] **T14** `Zara.Indexing`: `ScanOrchestrator` — batched 5k-row transactions (`FileIndexWriter`, upsert on `(volume_id, frn)`), progress events. **Scoping decision:** checkpoint/resume granularity is per top-level child of the scan root, not per-directory — see `002_scan_checkpoints.sql`'s header comment and the decision log below.
+- [x] **T15** `Zara.Indexing`: `ScanCheckpointStore` — resume a killed scan without restarting; `002_scan_checkpoints.sql`
+- [x] **T16** Bench (`benchmarks/Zara.Scenarios -- scan <files> <dirs>`): full scan + interrupt/resume, **real measured numbers, Release build, 100k files / 20 shards:**
+  - Full scan: **100,020 rows in 2.6s (~39,100 rows/s)**. Extrapolated linearly to 500k files: ~13s — comfortably inside §29.2's 120s exit bar (a real 500k run would be needed to confirm this holds at scale; the linear extrapolation is a reasonable expectation given the batched-transaction design, not a guarantee).
+  - Interrupt/resume: killed after ~10/20 shards (0.8s, 50,010 rows landed), resumed and finished the remaining 10 shards in 0.9s, ending at the fully-correct 100,020 rows. **Zero shards re-walked** — confirmed both here and in the unit test below via an explicit per-directory call-count assertion.
+
+**M2 exit:** all 6 tasks done, **184/184 tests passing** across all 8 test projects. The standout test is `ScanOrchestratorTests.ScanAsync_InterruptedThenResumed_CompletesFully_WithoutRewalkingFinishedChildren` — it cancels a real scan mid-flight via a synchronous progress callback, resumes it, and asserts (via a `CountingWalkScanner` spy) that every child directory was walked **exactly once** across both runs combined, not zero and not two.
 
 ### Milestone M3 — Name Search
 - [ ] **T17** `Zara.Search`: `NameIndex` — trigram map + roaring bitmap + folded-name arena (§12.2)
@@ -147,30 +151,52 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | 2026-08-09 | Introduced `RawDirectoryEntry` (Zara.Filesystem) instead of having `IDirectoryEnumerator` return `Zara.Core.Files.FileEntry` directly | `FileEntry.Id` (`FileId`) needs a resolved volume-table surrogate key, which is Zara.Storage's job (M2+) — the Filesystem layer must not know that key exists (§8.2 module boundary). `RawDirectoryEntry.Frn` is `ulong?` (not the strongly-typed `FileId`) so raw enumeration stays fully decoupled from Storage; a later layer combines a `RawDirectoryEntry` with volume context to produce a real `FileEntry`. |
 | 2026-08-09 | `Win32DirectoryEnumerator` (T08) wraps `DirectoryInfo.EnumerateFileSystemInfos()` instead of hand-rolling `FindFirstFileEx` P/Invoke | The .NET runtime already implements this on top of `FindFirstFileEx(FIND_FIRST_EX_LARGE_FETCH)` with no extra per-entry syscalls — matches what ARCHITECTURE.md §10.2 asks for ("works everywhere, no elevation, no undocumented API") at much lower interop risk than a second hand-written native surface. Trade-off measured directly in T09: ~4x the allocation of `NtDirectoryEnumerator` at 100k files (32MB vs 5.5MB) because it allocates a `FileSystemInfo` object per entry — acceptable for a correctness-first fallback path, not for the primary path. |
 | 2026-08-09 | `benchmarks/Zara.Scenarios` uses a plain `Stopwatch`/`GC.GetAllocatedBytesForCurrentThread` harness, not BenchmarkDotNet, for T09/B12 | Generating and enumerating a 100k-file corpus is itself the expensive part; BenchmarkDotNet's process-isolation and pilot-stage overhead would multiply that for little added precision at this scale. `benchmarks/Zara.Benchmarks` (BenchmarkDotNet, not yet created) is reserved for micro-benchmarking hot-path *methods* — e.g. the name index's trigram intersection at M3 — where that precision earns its cost. |
+| 2026-08-09 | Scan checkpoint granularity is per **top-level child of the scan root**, not per-directory throughout the tree | `WalkScanner`'s BFS queue (T13, already shipped and tested) is internal to one `Walk()` call and isn't persistable mid-traversal without invasive changes. Treating each top-level child as an independent, fully-idempotent unit of work is far simpler, still delivers the thing that actually matters (a killed 500k-file scan doesn't restart from zero — it re-walks at most one in-flight subtree), and was verified end-to-end: T16's benchmark and `ScanOrchestratorTests`'s resumability test both confirm zero redundant re-walks of completed subtrees. Revisit only if profiling shows a single top-level directory holding a large enough fraction of a real volume's files that "worst case: re-walk one subtree" stops being cheap. |
+| 2026-08-09 | M2's `files` table writes leave `parent_id` NULL | Populating it correctly requires either two-pass writes or querying back a parent's freshly-assigned `id` before writing its children — a real feature, not a one-line addition, and nothing in M2–M3's scope (name search, DSL, analytics) needs parent-chain path reconstruction yet. `path_hash` (populated) is enough for path-based lookups until it does. Tracked as a gap, not silently absent — flag before folder-rollup work (`folder_stats`, in the M4 task list) or Explorer-style path-breadcrumb reconstruction depends on it. |
+| 2026-08-09 | `FileIndexWriter` silently skips (counts, doesn't throw) any entry with a null `Frn` | Only `Win32DirectoryEnumerator` (the non-NTFS/denied-path fallback, T08) ever produces one, and there's no other stable identity to upsert on for such an entry. This is a real, documented gap for non-NTFS volumes — not yet a problem since M1–M2 target the primary NTFS/`NtDirectoryEnumerator` path exclusively; revisit when Phase 4's network-drive support needs it. |
+| 2026-08-09 | `path_hash` is `XxHash3.HashToUInt64` over the UTF-8 bytes of the **uppercased** canonical path | Matches NTFS's own case-insensitive identity semantics (same reasoning as `CanonicalPath`'s `OrdinalIgnoreCase` comparer, §10.1) — two paths differing only in case must hash identically. `System.IO.Hashing.XxHash3` (added .NET 8) rather than a hand-rolled implementation. |
+| 2026-08-09 | `WriteQueue` only implements `IAsyncDisposable`, not `IDisposable` | Caught at compile time in `benchmarks/Zara.Scenarios/ScanScenario.cs` — a plain `using var writeQueue = new WriteQueue(...)` doesn't compile. Synchronous call sites (like a console benchmark's `Main`) need an explicit `writeQueue.DisposeAsync().AsTask().GetAwaiter().GetResult()` instead. Not a bug, just a reminder for the next synchronous caller. |
 
 ---
 
 ## Notes for the next session
 
-- **M1 is complete.** Start at the first `[ ]` in **M2** (Storage & Walk
-  Indexer): T11 (SQLite bootstrap + WAL pragmas + `MigrationRunner`), then
-  T12 (single-writer `WriteQueue`), then T13 (`WalkScanner`, which composes
-  `Win32DirectoryEnumerator`/`NtDirectoryEnumerator` recursively — the
-  reparse-point guard from ARCHITECTURE.md §10.4 has NOT been implemented
-  yet anywhere; T13 is where it needs to land, as part of the walk, not
-  bolted on after).
+- **M1 and M2 are both complete.** Start at the first `[ ]` in **M3** (Name
+  Search): T17 (`NameIndex` — trigram map + roaring bitmap + folded-name
+  arena, §12.2), then T18 (incremental upsert/remove, index warms during
+  scan), then T19 (`DslLexer`/`DslParser` for the structured query grammar,
+  §12.3), then T20 (`QueryPlanner`), then T21 (bench: name search p95 <20ms
+  @ 500k files).
+  - **Before T17:** consider whether a `RoaringBitmap` implementation needs
+    to be brought in (no package for it is in `Directory.Packages.props`
+    yet) or hand-rolled at a scale where a plain `HashSet<int>`/sorted-array
+    intersection is good enough for now — §32.1's `medium` corpus (500k
+    files) is the real target, and a naive approach might already clear
+    T21's 20ms bar at that scale without needing true Roaring bitmaps yet.
+    Measure before reaching for the more complex structure.
+  - `files.parent_id` is still NULL (see decision log) — T17 doesn't need it
+    (name search works off `name_folded` + `path_hash`, not parent chains),
+    but if anything in M3 starts wanting path reconstruction, that's the
+    signal to go back and populate it rather than working around its absence.
 - Run `dotnet test` before marking any task `[x]`; for anything
-  performance-sensitive, prefer getting a real number (like T09's benchmark
-  run) over an assumption — it's cheap on this hardware and it's already
-  caught nothing wrong, which is itself useful signal.
+  performance-sensitive, prefer getting a real number (like T09/T16's
+  benchmark runs) over an assumption — it's cheap on this hardware and has
+  already caught one real correctness issue (T04's `\\?\`-prefix bug) and
+  quantified one real, expected regression (T09's fallback allocation).
 - If a task reveals the architecture doc is wrong, fix ARCHITECTURE.md in the same commit and log it above — don't let drift accumulate.
-- Current repo state: `Zara.sln`(x) has **7 projects** (`Zara.Core`,
-  `Zara.Filesystem`, `Zara.Core.Tests`, `Zara.Filesystem.Tests`,
-  `Zara.ArchitectureTests`, plus `benchmarks/Zara.Scenarios`), **119/119**
-  tests passing, two commits on `master`. `dotnet build` / `dotnet test` both
-  clean from a fresh clone. `dotnet run --project benchmarks/Zara.Scenarios -c
-  Release -- <fileCount>` reproduces T09's numbers (defaults to 100,000;
-  reuses a cached corpus under `%TEMP%\zara-scenario-b12-<n>` on repeat runs).
-- Phase 0 spikes (S1–S4) are still outstanding — see the sequencing note
-  above M1's checklist. Fit them in before M2 goes past the walk scanner, and
-  definitely before M5/M8 go deep.
+- Current repo state: solution has **13 projects** (7 `src/`, includes
+  `Zara.Storage`, `Zara.Volumes`, `Zara.Indexing`; 5 `tests/`; 1
+  `benchmarks/Zara.Scenarios`), **184/184** tests passing, four commits on
+  `master`. `dotnet build` / `dotnet test` both clean from a fresh clone.
+  - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- list
+    <fileCount>` reproduces T09's directory-listing numbers.
+  - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- scan
+    <totalFiles> <childDirCount>` reproduces T16's full-scan and
+    interrupt/resume numbers (defaults: 100,000 files / 20 shards).
+- Phase 0 spikes (S1–S4) are still outstanding. M2 shipped without them per
+  the sequencing note (below) — T13's real-junction test and T07's
+  from-scratch-correct NT struct interop are exactly the kind of evidence
+  that note said would lower S1's risk, and they did. **M3 is still fine to
+  proceed without the spikes** (name index construction is ordinary
+  algorithms work, not a new unknown), but do not start M5 (WPF at scale)
+  or M8 (LLM grammar reliability) before S2/S3 respectively are run for real.

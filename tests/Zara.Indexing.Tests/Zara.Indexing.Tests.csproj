@@ -1,16 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <IsPackable>false</IsPackable>
-    <!-- Server GC matters for this project specifically: B12 measures
-         allocation and throughput for directory listing at scenario scale,
-         and Workstation GC's smaller heap/different pause behavior would
-         skew both numbers relative to what Zara.Engine (which runs Server
-         GC — ARCHITECTURE.md §24.2) will actually see in production. -->
-    <ServerGarbageCollection>true</ServerGarbageCollection>
-  </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\src\Zara.Core\Zara.Core.csproj" />
     <ProjectReference Include="..\..\src\Zara.Filesystem\Zara.Filesystem.csproj" />
@@ -20,7 +9,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>

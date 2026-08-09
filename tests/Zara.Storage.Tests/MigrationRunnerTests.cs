@@ -51,7 +51,23 @@ public class MigrationRunnerTests : IDisposable
         cmd.CommandText = "PRAGMA user_version;";
         long version = (long)cmd.ExecuteScalar()!;
 
-        Assert.Equal(1, version);
+        // Not hardcoded to a specific number: this asserts "advanced to
+        // whatever the highest embedded migration is" (currently 002, will
+        // keep growing), not "advanced to exactly 1" — the latter is exactly
+        // the kind of assertion that goes stale the moment a new migration
+        // lands, which is what happened here when 002_scan_checkpoints.sql
+        // was added.
+        int expectedLatest = typeof(MigrationRunner).Assembly.GetManifestResourceNames()
+            .Select(name =>
+            {
+                string[] parts = name.Split('.');
+                return parts.Length >= 2 && string.Equals(parts[^1], "sql", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(parts[^2].Split('_')[0], out int v) ? v : (int?)null;
+            })
+            .Where(v => v.HasValue)
+            .Max(v => v!.Value);
+
+        Assert.Equal(expectedLatest, version);
     }
 
     [Fact]

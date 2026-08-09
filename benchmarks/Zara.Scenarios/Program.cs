@@ -1,6 +1,18 @@
 using System.Diagnostics;
 using Zara.Filesystem.Enumeration;
 using Zara.Filesystem.Paths;
+using Zara.Scenarios;
+
+// Dispatch: `dotnet run -- list [fileCount]` (default) or `dotnet run -- scan
+// [totalFiles] [childDirCount]`. Kept as a simple positional-arg dispatcher
+// rather than a real CLI parser — this project has two scenarios, not twenty.
+if (args.Length > 0 && string.Equals(args[0], "scan", StringComparison.OrdinalIgnoreCase))
+{
+    int scanTotalFiles = args.Length > 1 && int.TryParse(args[1], out int tf) ? tf : 100_000;
+    int scanChildDirs = args.Length > 2 && int.TryParse(args[2], out int cd) ? cd : 20;
+    ScanScenario.Run(scanTotalFiles, scanChildDirs);
+    return 0;
+}
 
 // B12 (ARCHITECTURE.md §32.2): directory listing at scenario scale.
 // T09's exit bar: 100k-file directory listing < 400ms, < 20MB allocated.

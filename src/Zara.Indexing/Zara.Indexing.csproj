@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zara.Core\Zara.Core.csproj" />
+    <ProjectReference Include="..\Zara.Filesystem\Zara.Filesystem.csproj" />
+    <ProjectReference Include="..\Zara.Volumes\Zara.Volumes.csproj" />
+    <ProjectReference Include="..\Zara.Storage\Zara.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="System.IO.Hashing" />
+  </ItemGroup>
+
+</Project>
