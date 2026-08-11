@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The composition layer combining the operation journal (Zara.Storage)
+       with real file execution (Zara.Filesystem) — undo (T35) needs both,
+       and neither of those two projects depends on the other (by design).
+       ARCHITECTURE.md's repo sketch (§31) doesn't name this layer
+       explicitly at the M6 stage — it only shows up once Zara.Engine/
+       Zara.Agent exist — but the orchestration logic itself (build the
+       reverse of a completed operation, execute it, journal the undo as
+       its own operation) is real work needed now, not speculative. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zara.Core\Zara.Core.csproj" />
+    <ProjectReference Include="..\Zara.Filesystem\Zara.Filesystem.csproj" />
+    <ProjectReference Include="..\Zara.Storage\Zara.Storage.csproj" />
+  </ItemGroup>
+
+</Project>

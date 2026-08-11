@@ -22,6 +22,16 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageVersion Include="System.IO.Hashing" Version="9.0.0" />
     <PackageVersion Include="Blake3" Version="2.0.0" />
+    <!-- IFileOperation is one of the most notoriously error-prone COM
+         interfaces to hand-roll in C# (strict vtable ordering, no type
+         library) — a subtle mistake there causes silent memory corruption,
+         not a compile error. Vanara.Windows.Shell's ShellFileOperations is a
+         well-established, actively maintained wrapper (part of the wider
+         Vanara.PInvoke suite already implicitly trusted throughout this
+         codebase's interop style) — used here instead of hand-rolled COM
+         specifically because the risk profile is qualitatively different
+         from the simple flat DllImport signatures elsewhere in Zara.Filesystem. -->
+    <PackageVersion Include="Vanara.Windows.Shell" Version="5.0.5" />
 
     <!-- Logging -->
     <PackageVersion Include="Serilog" Version="4.2.0" />

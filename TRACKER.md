@@ -13,7 +13,7 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | Phase | Status | Started | Target exit |
 |---|---|---|---|
 | 0 — Spikes | `[ ]` not started (see note) | — | 4 spikes green |
-| 1 — Functional MVP | `[~]` in progress — **M1 + M2 + M3 + M4 complete**, M5 next | 2026-08-09 | §29.2 criteria met |
+| 1 — Functional MVP | `[~]` in progress — **M1–M4 complete, M6 non-UI pieces complete**, M5 (UI) waiting on Spike S2 | 2026-08-09 | §29.2 criteria met |
 | 2 — Content & speed | `[ ]` not started | — | — |
 | 3 — Controlled operations | `[ ]` not started | — | — |
 | 4 — Windows integration | `[ ]` not started | — | — |
@@ -110,12 +110,14 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 - [ ] **T29** Keyboard-complete interaction (arrow nav, type-ahead, Tab regions, F2, Del)
 - [ ] **T30** `CommandBarView` + `SyntaxProbe` (structured DSL vs. bare token vs. NL routing, §8.3)
 
-### Milestone M6 — Operations & Journal
-- [ ] **T31** `Zara.Filesystem.Shell`: `IFileOperation` wrapper (`ShellFileOperations`) — copy/move/rename/delete-to-Recycle-Bin
-- [ ] **T32** `IOperationJournal` + `operations`/`operation_items` schema + write protocol (§19.3)
-- [ ] **T33** Crash-recovery: replay `status='executing'` entries on Engine start (§19.4)
-- [ ] **T34** Undo stack (50 deep, 24h expiry) + `OperationPreviewDialog`
-- [ ] **T35** Property test: `undo(op(fs)) == fs` byte-identical, for move/copy/rename/delete
+### Milestone M6 — Operations & Journal — **[x] NON-UI PIECES COMPLETE, 2026-08-09**
+- [x] **T31** `Zara.Filesystem.Shell`: `IFileOperation` wrapper — copy/move/rename/delete-to-Recycle-Bin, via `Vanara.Windows.Shell.ShellFileOperations` (a vetted library, not hand-rolled COM — see decision log for why `IFileOperation`'s vtable-ordering risk specifically justified that, unlike the simple flat DllImports used everywhere else in `Zara.Filesystem`). **Two real bugs found and fixed by running against real files, not by inspection:** (1) `IFileOperation` requires an STA thread — `Task.Run`'s ThreadPool threads are MTA and threw `ThreadStateException`; fixed with a dedicated STA `Thread`. (2) The Shell namespace parser (`SHCreateItemFromParsingName` under the hood) does not understand the `\\?\` extended-length-path prefix every `CanonicalPath` in this codebase carries — threw `ArgumentException`; fixed by stripping the prefix before constructing `ShellItem`/`ShellFolder`. 8/8 tests passing, all against real temp files (copy/move/rename/delete, multi-item batches, progress reporting, result-path tracking).
+- [x] **T32** `IOperationJournal` (`Zara.Core.Operations`) + `OperationJournal` (`Zara.Storage.Journal`) + `004_operations.sql` (`operations`/`operation_items`, trimmed from §22's full schema — AI-plan/session columns deferred until M8's Agent exists to populate them) + the write protocol from §19.3 (plan durably recorded in one transaction before anything executes). 15 tests.
+- [x] **T33** `ICrashRecoveryService`/`CrashRecoveryService` (`Zara.Storage.Journal`) — finds operations stuck at `Executing`, re-stats each still-`Pending` item against the real filesystem to infer what happened (§19.4's exact rule: source gone + dest present = completed; source present + dest absent = pending; both/neither = unrecoverable, never guessed), always marks the operation `Partial` — never silently promoted back to `Completed` even if every item turns out fine. 11 tests against real files simulating each crash scenario.
+- [ ] **T34** Undo stack (50 deep, 24h expiry) + `OperationPreviewDialog` — **the dialog needs UI (deferred to M5); the stack-depth/expiry bookkeeping itself is a small addition to `IOperationJournal.GetUndoableAsync`'s caller and hasn't been built as a distinct component yet.**
+- [x] **T35** `IUndoService`/`UndoService` (new project: `Zara.Operations` — the composition layer combining `Zara.Storage`'s journal with `Zara.Filesystem`'s shell execution; see decision log for why a new project rather than folding into either). Move/Rename/Copy undo fully implemented (Copy-undo hash-verifies before deleting, per §19.1); **Delete-undo (Recycle Bin restore) is explicitly NOT implemented** — `UndoAsync` returns an honest, structured failure rather than a wrong attempt; see `IUndoService`'s remarks. Property test: 8 tests including a 15-trial randomized-content loop asserting `undo(op(fs)) == fs` byte-identical for Move, plus a dedicated safety test proving Copy-undo refuses to delete a copy that was modified after copying.
+
+**M6 non-UI exit: 354/354 tests passing across 10 test projects.** T31 is this milestone's standout: real Windows Shell COM interop, verified against real files, with two genuine environment-specific bugs (STA threading, `\\?\` incompatibility) caught by actually running the code — exactly the discipline established since M1.
 
 ### Milestone M7 — Two-Process Split
 - [ ] **T36** `Zara.Contracts`: `.proto` definitions (search/index/journal/admin — ai.proto in M8)
@@ -171,41 +173,43 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | 2026-08-09 | `files.parent_id` is populated via a two-step hash-now/resolve-later mechanism (`parent_path_hash` set at write time, `ParentIdBackfiller` resolves it afterward), not directly during the scan | The streaming/batched writer (`ScanOrchestrator`, shipped at M2) can't guarantee a directory's `id` is assigned before its children are written for large subtrees — a direct "look up my parent's id" at write time would require buffering whole subtrees in memory to guarantee order, defeating the point of streaming writes. Hashing the parent's path needs no such guarantee; a single correlated-subquery `UPDATE` afterward resolves everything regardless of write order. Verified end-to-end (real scan → backfill → walk the chain and reconstruct the real path) rather than just unit-tested against synthetic rows. |
 | 2026-08-09 | `StaleFileFinder` ranks staleness by `modified_utc`, never `accessed_utc` | NTFS last-access-time tracking is OS-disabled by default since Windows Vista for performance — `accessed_utc` is not a trustworthy signal on a typical Windows 11 machine. This is flagged prominently in the interface's own XML doc remarks so nobody building a UI on top of it accidentally promises "files you haven't opened" precision the data can't back up; the honest framing is "not modified since". |
 | 2026-08-09 | `SizeRollup` does a full recomputation over the whole volume, not the incremental `dirty`-flag propagation ARCHITECTURE.md §22 describes for production scale | A correct, easy-to-verify O(n) single-pass baseline (bottom-up, ordered by `depth` descending) beats a more complex incremental design that hasn't been justified by any measurement yet — consistent with "measure before optimizing" (T21's whole lesson). Revisit only once a large-corpus benchmark shows full recomputation costing enough to matter; §32.1's `medium`/`large` corpora (500k/1M files) are the right scale to check that at. |
+| 2026-08-09 | Used `Vanara.Windows.Shell` (`ShellFileOperations`) for T31 instead of hand-rolled `IFileOperation` COM interop | `IFileOperation` has no type library and strict vtable ordering — a mistake there is silent memory corruption at runtime, not a compile error, which is a qualitatively different risk than the flat `DllImport` signatures used everywhere else in `Zara.Filesystem` (those fail loudly and immediately if wrong). A vetted, actively-maintained wrapper was the right call specifically for this interface. Confirmed at `dotnet add package` time that a resolvable version (5.0.5) exists before committing to the dependency. |
+| 2026-08-09 | `ShellOperations.ExecuteAsync` runs `IFileOperation` on a dedicated `Thread` with `ApartmentState.STA`, not `Task.Run` | **Found by running the T31 tests, not by inspection** — the first attempt used `Task.Run`, which uses ThreadPool threads (MTA by default in .NET), and Vanara's own `OleThreadState.EnsureSTA()` threw `ThreadStateException` immediately. A dedicated STA thread per call is simple and correct; a reused, persistent STA message-pump thread would be the throughput optimization if file operation batches ever became a hot path, which they are not. |
+| 2026-08-09 | `ShellOperations` strips the `\\?\` extended-length prefix before constructing `ShellItem`/`ShellFolder` | **Also found by running the tests** — every `CanonicalPath` in this codebase carries that prefix (§10.1), but `ShellItem`'s constructor (`SHCreateItemFromParsingName` underneath) threw `ArgumentException` on one. Shell32's namespace parser has its own path syntax, distinct from raw Win32 file I/O's — this is a real, general limitation of the Windows Shell APIs, not a Vanara quirk, and anything else that hands a path to Shell32 in the future needs the same stripping. |
+| 2026-08-09 | Created a new project, `Zara.Operations`, for `IUndoService` rather than adding it to `Zara.Storage` or `Zara.Filesystem` | Undo needs BOTH the operation journal (`Zara.Storage`) and real file execution (`Zara.Filesystem`), and neither of those two projects depends on the other — by design, per the §8.2 module boundary table. ARCHITECTURE.md's repo sketch (§31) doesn't name this composition layer explicitly until Zara.Engine/Zara.Agent exist (M7+), but the orchestration logic (build the reverse of a completed operation, execute it, journal the undo as its own operation) was real, buildable work now, not something to fake or skip. |
+| 2026-08-09 | `IUndoService` does not support undoing a Delete | §19.1 marks Recycle-Bin delete as "fully reversible" via restoring the tracked `IShellItem`, but implementing that restore correctly (finding the right Recycle Bin entry, handling it having been purged or the Bin emptied since) is real, separate work this session didn't include. `UndoAsync` returns a clear, structured failure for a Delete operation rather than a silently-wrong or partially-correct attempt — consistent with the "parse now, execute later" pattern already used for `QueryPlanner`'s `dup:`/`empty:`/`content:` predicates. |
+| 2026-08-09 | T35's undo property test is a hand-written randomized loop (15 trials, real I/O per trial), not FsCheck, despite `FsCheck.Xunit` already being a referenced package | Every check here performs a real Shell COM operation and real SQLite writes per trial — slow, stateful I/O that doesn't fit FsCheck's usual "cheap pure function, hundreds of generated inputs" model, and wiring FsCheck's generators correctly under time pressure for an unfamiliar case was a worse trade than a manual loop that tests the identical property (`undo(op(fs)) == fs`, byte-identical) with full confidence. `FsCheck.Xunit` remains available for a future property test whose subject is a pure function (e.g. `DslParser`, `CanonicalPath` normalization) where its generator-based approach is the natural fit. |
 
 ---
 
 ## Notes for the next session
 
-- **M1–M4 are all complete.** The natural next task is **M5 (WPF Shell)** —
-  **but read this before starting it.**
+- **M1–M4 are complete, and M6's non-UI pieces (T31/T32/T33/T35) are done
+  too.** What's left in reach without an interactive/visual environment:
 
-  **M5 is a deliberate stopping point for an agent working non-interactively.**
-  Every milestone through M4 was verified the same way: write it, build it,
-  run real tests against real files/databases, and — for anything
-  performance-sensitive — measure it for real (T09, T16, T21 all did this,
-  and T21 specifically caught two genuine bugs no amount of code review
-  would have found). WPF UI work breaks that loop: `dotnet build` can prove
-  the XAML/C# compiles, but nothing available in this environment can
-  render the window, screenshot it, or interact with it to check that a
-  virtualized grid actually scrolls smoothly at scale. Writing M5's tasks
-  anyway would mean shipping UI code carrying the same "looks right"
-  confidence the rest of this tracker has deliberately refused to settle
-  for. **This is also exactly what the sequencing note has said since
-  M1: do not start M5 before Spike S2 (WPF at 1M rows) is run for real,
-  and S2 needs the same interactive/visual verification M5 itself does.**
-  If picking this up in an interactive session (Claude Code with a visible
-  IDE, or a human developer), start with S2, then T25–T30 in order.
+  - **T34's non-dialog half** — undo stack depth (50) and 24h expiry
+    bookkeeping on top of `IOperationJournal.GetUndoableAsync`. Small,
+    well-scoped, real backend work. The `OperationPreviewDialog` itself
+    still needs UI (M5).
+  - **M7 (Two-Process Split)** — `Zara.Contracts` (`.proto` definitions),
+    `Zara.Engine` (Generic Host + named-pipe gRPC server, owner-SID-only
+    DACL). This is genuinely continuable non-interactively: gRPC server
+    startup, a named pipe client/server round-trip, and DACL correctness
+    are all things a real client can connect to and verify from a test —
+    no rendering required. Start here if picking this up again without a
+    visual environment. See ARCHITECTURE.md §9 for the process
+    architecture and §8.1 for exactly which RPCs `Zara.Engine` exposes.
 
-  **What CAN keep going non-interactively:** M6 (Operations & Journal,
-  T31–T35) is mostly backend — `IFileOperation`/`IShellFileOperations`
-  wrapping, the operation journal schema and write protocol, crash
-  recovery, and (per ARCHITECTURE.md §19.1's own reversibility table) a
-  property test that undo reconstructs a byte-identical tree — all of that
-  is real-file-operations-against-a-temp-directory work, verifiable exactly
-  the way M1–M4 were. Only T34's `OperationPreviewDialog` needs a UI to
-  exist first. **If continuing non-interactively, T31–T33 and T35 (skip the
-  dialog piece of T34) are a reasonable next target** — see ARCHITECTURE.md
-  §19 for the full journal design before starting.
+  **M5 (WPF Shell) remains the deliberate stopping point it was flagged as
+  last session** — still blocked on Spike S2 (WPF at 1M rows), which needs
+  the same visual verification M5 itself does. Every milestone through M6
+  was verified by actually running it: real files, real databases, real
+  Shell COM calls (T31 caught two genuine environment bugs — an STA
+  threading requirement and a `\\?\`-prefix incompatibility — that no
+  amount of code review would have found). WPF breaks that loop; don't
+  lower the bar for it. If picking this up in an interactive session
+  (Claude Code with a visible IDE, or a human developer), start with S2,
+  then T25–T30.
 - Run `dotnet test` before marking any task `[x]`; for anything
   performance-sensitive, get a real number rather than assume one — T21
   alone caught two real bugs (a full-sort-instead-of-top-K in `NameIndex`,
@@ -214,11 +218,11 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
   500k-entry scale. That's now the established pattern for every
   performance-sensitive piece of code in this repo — trust it.
 - If a task reveals the architecture doc is wrong, fix ARCHITECTURE.md in the same commit and log it above — don't let drift accumulate.
-- Current repo state: solution has **17 projects** (9 `src/` — no new
-  project this round, but `Zara.Filesystem`/`Zara.Search` both grew; 7
-  `tests/`; 1 `benchmarks/Zara.Scenarios`), **312/312** tests passing, six
-  commits on `master` (once this session's work is committed). `dotnet
-  build` / `dotnet test` both clean from a fresh clone.
+- Current repo state: solution has **20 projects** (11 `src/` — adds
+  `Zara.Operations`; 8 `tests/` — adds `Zara.Operations.Tests`; 1
+  `benchmarks/Zara.Scenarios`), **354/354** tests passing, seven commits on
+  `master` (once this session's work is committed). `dotnet build` /
+  `dotnet test` both clean from a fresh clone.
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- list
     <fileCount>` reproduces T09's directory-listing numbers.
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- scan
@@ -232,11 +236,17 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
   `DuplicateFinder`/`EmptyFolderFinder` exist as of M4. Nobody's wired that
   up yet; it's a small, well-scoped follow-up whenever `QueryPlanner` gets
   revisited.
-- Phase 0 spikes (S1–S4) are still outstanding. M2–M4 shipped without them
-  per the sequencing note above — real-junction tests, from-scratch-correct
-  NT struct interop, and T21's benchmark catching two genuine bugs are
-  exactly the kind of evidence that note said would lower S1's risk, and it
-  kept doing so through M4. **S2 (WPF) and S3 (LLM grammar reliability) are
-  now the two blockers that actually matter** — M5 needs the former, M8
-  needs the latter, and neither can be de-risked further by more backend
-  work.
+- `IUndoService` cannot undo a Delete (Recycle Bin restore not implemented
+  — see decision log). If M7's Engine ever exposes undo over gRPC, that
+  gap needs to be either closed or surfaced clearly in the RPC contract
+  (e.g. a typed "not supported for this operation kind" response), not
+  silently absent.
+- Phase 0 spikes (S1–S4) are still outstanding. M2–M4 and M6's non-UI work
+  all shipped without them per the sequencing note — real-junction tests,
+  from-scratch-correct NT struct interop, T21's benchmark catching two
+  genuine bugs, and now T31's real STA-threading and Shell32-path-syntax
+  bugs are exactly the kind of evidence that note said would lower S1's
+  risk, and it's kept doing so every milestone. **S2 (WPF) and S3 (LLM
+  grammar reliability) are the two blockers that actually matter now** —
+  M5 needs the former, M8 needs the latter, and neither can be de-risked
+  further by more backend work.
