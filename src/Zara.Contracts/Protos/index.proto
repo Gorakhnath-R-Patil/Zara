@@ -1,0 +1,18 @@
+syntax = "proto3";
+option csharp_namespace = "Zara.Contracts.Indexing";
+package zara.indexing;
+
+// Minimal by design at M7 — just enough for the App's index-status UI
+// (§21.1's status bar) and for T40's failure-mode test to have a second RPC
+// to probe. Scan control (pause/resume/trigger) is real scope but not yet
+// needed by anything that calls it.
+service IndexService {
+  rpc GetStatus (GetStatusRequest) returns (IndexStatusResponse);
+}
+
+message GetStatusRequest {}
+
+message IndexStatusResponse {
+  int64 indexed_file_count = 1;
+  bool is_scanning = 2;
+}

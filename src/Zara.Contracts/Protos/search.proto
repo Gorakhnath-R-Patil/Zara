@@ -1,0 +1,20 @@
+syntax = "proto3";
+option csharp_namespace = "Zara.Contracts.Search";
+package zara.search;
+
+// Streaming, per ARCHITECTURE.md §8.3: "first page emitted before the rest
+// is scored" — a unary request/response would force the whole result set to
+// be ready before the client sees anything.
+service SearchService {
+  rpc Search (SearchRequest) returns (stream SearchHit);
+}
+
+message SearchRequest {
+  string query = 1;
+  int32 max_results = 2;
+}
+
+message SearchHit {
+  string name = 1;
+  string match_kind = 2; // NameMatchKind, as a string — see NameHit
+}

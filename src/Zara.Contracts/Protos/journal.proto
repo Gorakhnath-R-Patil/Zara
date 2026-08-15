@@ -1,0 +1,19 @@
+syntax = "proto3";
+option csharp_namespace = "Zara.Contracts.Journal";
+package zara.journal;
+
+service JournalService {
+  rpc GetUndoable (GetUndoableRequest) returns (stream OperationSummary);
+}
+
+message GetUndoableRequest {
+  int32 limit = 1;
+}
+
+message OperationSummary {
+  string id = 1;
+  string kind = 2;
+  string status = 3;
+  int64 created_utc = 4;
+  int32 item_count = 5;
+}

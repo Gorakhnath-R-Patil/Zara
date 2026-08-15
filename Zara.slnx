@@ -5,7 +5,16 @@
     </Project>
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Zara.Contracts/Zara.Contracts.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Zara.Core/Zara.Core.csproj" />
+    <Project Path="src/Zara.Engine/Zara.Engine.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Zara.EngineClient/Zara.EngineClient.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Zara.Filesystem/Zara.Filesystem.csproj" />
     <Project Path="src/Zara.Indexing/Zara.Indexing.csproj">
       <Platform Project="x64" />
@@ -28,6 +37,12 @@
       <Platform Project="x64" />
     </Project>
     <Project Path="tests/Zara.Core.Tests/Zara.Core.Tests.csproj" />
+    <Project Path="tests/Zara.Engine.Tests/Zara.Engine.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tests/Zara.EngineClient.Tests/Zara.EngineClient.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="tests/Zara.Filesystem.Tests/Zara.Filesystem.Tests.csproj" />
     <Project Path="tests/Zara.Indexing.Tests/Zara.Indexing.Tests.csproj">
       <Platform Project="x64" />

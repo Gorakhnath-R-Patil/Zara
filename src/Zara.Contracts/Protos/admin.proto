@@ -1,0 +1,18 @@
+syntax = "proto3";
+option csharp_namespace = "Zara.Contracts.Admin";
+package zara.admin;
+
+// The health-check / liveness surface — ARCHITECTURE.md §9.4's reconnect
+// logic pings this to tell "Engine unreachable" apart from "Engine reachable
+// but slow", and EngineProcessManager's degraded-mode banner depends on it.
+service AdminService {
+  rpc Ping (PingRequest) returns (PingResponse);
+}
+
+message PingRequest {}
+
+message PingResponse {
+  int32 process_id = 1;
+  double uptime_seconds = 2;
+  string version = 3;
+}

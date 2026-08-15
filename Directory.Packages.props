@@ -36,6 +36,20 @@
     <!-- Logging -->
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
+
+    <!-- IPC (M7): GrpcDotNetNamedPipes rather than full Grpc.AspNetCore +
+         Kestrel — a lightweight background process hosting a few RPCs over
+         a named pipe has no use for an HTTP server stack; this package
+         wraps NamedPipeServerStream/NamedPipeClientStream directly with
+         gRPC framing on top, matching ARCHITECTURE.md §6.8's own reasoning
+         for choosing gRPC-over-named-pipes over hand-rolled framing (schema-
+         first contracts, streaming, cancellation, deadlines) without the
+         parts of that stack Zara.Engine doesn't need. -->
+    <PackageVersion Include="Grpc.Tools" Version="2.83.0" />
+    <PackageVersion Include="Google.Protobuf" Version="3.29.3" />
+    <PackageVersion Include="Grpc.Core.Api" Version="2.67.0" />
+    <PackageVersion Include="GrpcDotNetNamedPipes" Version="3.1.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
   </ItemGroup>
 
 </Project>

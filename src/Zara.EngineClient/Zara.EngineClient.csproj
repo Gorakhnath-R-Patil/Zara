@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- App-side services (process supervision + the gRPC client) that don't
+       depend on WPF existing — Zara.App (M5, not yet built non-interactively)
+       will reference this rather than hosting the logic itself, matching
+       the same reasoning as Zara.Operations (T35's decision log). -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zara.Contracts\Zara.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GrpcDotNetNamedPipes" />
+  </ItemGroup>
+
+</Project>

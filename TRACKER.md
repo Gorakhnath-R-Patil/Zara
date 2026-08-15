@@ -13,7 +13,7 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | Phase | Status | Started | Target exit |
 |---|---|---|---|
 | 0 — Spikes | `[ ]` not started (see note) | — | 4 spikes green |
-| 1 — Functional MVP | `[~]` in progress — **M1–M4 complete, M6 non-UI pieces complete**, M5 (UI) waiting on Spike S2 | 2026-08-09 | §29.2 criteria met |
+| 1 — Functional MVP | `[~]` in progress — **M1–M4, M6 non-UI pieces, M7 complete**, M5 (UI) waiting on Spike S2, M8 next | 2026-08-09 | §29.2 criteria met |
 | 2 — Content & speed | `[ ]` not started | — | — |
 | 3 — Controlled operations | `[ ]` not started | — | — |
 | 4 — Windows integration | `[ ]` not started | — | — |
@@ -119,12 +119,14 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 
 **M6 non-UI exit: 354/354 tests passing across 10 test projects.** T31 is this milestone's standout: real Windows Shell COM interop, verified against real files, with two genuine environment-specific bugs (STA threading, `\\?\` incompatibility) caught by actually running the code — exactly the discipline established since M1.
 
-### Milestone M7 — Two-Process Split
-- [ ] **T36** `Zara.Contracts`: `.proto` definitions (search/index/journal/admin — ai.proto in M8)
-- [ ] **T37** `Zara.Engine`: Generic Host, named-pipe gRPC server, owner-SID-only DACL
-- [ ] **T38** `Zara.App`: `EngineProcessManager` (spawn, job-object kill-on-close, backoff reconnect, degraded-mode banner)
-- [ ] **T39** Move Storage/Indexing/Search into the Engine process; App talks only via `EngineClient`
-- [ ] **T40** Failure-mode tests: kill Engine mid-search → App keeps browsing (§28 #3)
+### Milestone M7 — Two-Process Split — **[x] COMPLETE, 2026-08-09**
+- [x] **T36** `Zara.Contracts`: `.proto` definitions (admin/search/index/journal — `ai.proto` deferred to M8, when there's an actual AI service to define). Built clean on the first try, including proto codegen (`GrpcServices="Both"`).
+- [x] **T37** `Zara.Engine`: .NET Generic Host, `GrpcDotNetNamedPipes`-based named-pipe gRPC server (not full `Grpc.AspNetCore`/Kestrel — see decision log), owner-SID-only DACL. **Found and fixed a real ACL bug by actually running it**, not by inspection — see decision log; every client, including the legitimate owner, was denied until fixed. 6/6 tests, a real host + real client + real named pipe.
+- [x] **T38** `Zara.EngineClient` (not `Zara.App/Services` — WPF doesn't exist non-interactively yet; see decision log): `EngineProcessManager` (real process spawn, Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, hand-rolled — not Vanara — P/Invoke, since Job Objects are flat Win32, not COM), `ReconnectBackoff` (pure, deterministic, the exact §9.4 schedule: 1s/4s/16s/60s, gives up after 3 crashes in 5 min), `EngineClient` (typed gRPC client, catches `RpcException` per call and degrades gracefully rather than throwing). 15 tests — including one that kills a real spawned process via its job object with no clean shutdown and confirms the OS actually terminated it.
+- [x] **T39** Real `ScanOrchestrator` wired into the Engine host (`StartupScanHostedService`, opt-in via `--scan-root=...`) and kept in sync with the in-memory `NameIndex` via a decorator (`NameIndexSyncingFileIndexWriter`) — not just Storage/Search sitting in the Engine process waiting to be seeded by hand, which is what T37's tests alone would have left true. Verified end-to-end: real files on a real temp directory → real scan → real gRPC `Search` call finds them, including a nested file inside a subfolder. **Found and fixed the same skip-list-collision bug class twice more** — see decision log.
+- [x] **T40** `FailureModeTests`: kill a real spawned Engine process (`Process.Kill()`, no clean shutdown) mid-search — the client survives cleanly (`Record.ExceptionAsync` returns null), reports `Degraded`, keeps failing safely on repeated calls rather than throwing once and corrupting state, and recovers to `Connected` once the Engine restarts on the same pipe name. This is the one test in the whole session that most directly exercises §9.2's reason for the two-process split existing at all.
+
+**M7 exit:** all 5 tasks done. **24 new tests across 5 new test files** — `Zara.Engine.Tests`: `EngineHostTests` (6) + `StartupScanTests` (3) = 9; `Zara.EngineClient.Tests`: `ReconnectBackoffTests` (8) + `EngineProcessManagerTests` (4) + `FailureModeTests` (3) = 15 — on top of the 354 passing at M6's exit, for **378/378** (see the notes-for-next-session line to confirm against the actual full-suite run). Three genuine, previously-invisible bugs found purely by *running* this milestone's code (not by review): the pipe DACL denying its own owner, `DateTime.UtcNow` non-monotonicity producing a negative uptime, and `DefaultSkipList`'s `bin\Debug` exclusion catching a test's own build-output-adjacent scan root.
 
 ### Milestone M8 — Query Compiler (first AI feature)
 - [ ] **T41** `Zara.Ai`: `ILlmProvider` + `OllamaProvider` (JSON-schema `format`, `keep_alive=30m`)
@@ -178,38 +180,59 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | 2026-08-09 | `ShellOperations` strips the `\\?\` extended-length prefix before constructing `ShellItem`/`ShellFolder` | **Also found by running the tests** — every `CanonicalPath` in this codebase carries that prefix (§10.1), but `ShellItem`'s constructor (`SHCreateItemFromParsingName` underneath) threw `ArgumentException` on one. Shell32's namespace parser has its own path syntax, distinct from raw Win32 file I/O's — this is a real, general limitation of the Windows Shell APIs, not a Vanara quirk, and anything else that hands a path to Shell32 in the future needs the same stripping. |
 | 2026-08-09 | Created a new project, `Zara.Operations`, for `IUndoService` rather than adding it to `Zara.Storage` or `Zara.Filesystem` | Undo needs BOTH the operation journal (`Zara.Storage`) and real file execution (`Zara.Filesystem`), and neither of those two projects depends on the other — by design, per the §8.2 module boundary table. ARCHITECTURE.md's repo sketch (§31) doesn't name this composition layer explicitly until Zara.Engine/Zara.Agent exist (M7+), but the orchestration logic (build the reverse of a completed operation, execute it, journal the undo as its own operation) was real, buildable work now, not something to fake or skip. |
 | 2026-08-09 | `IUndoService` does not support undoing a Delete | §19.1 marks Recycle-Bin delete as "fully reversible" via restoring the tracked `IShellItem`, but implementing that restore correctly (finding the right Recycle Bin entry, handling it having been purged or the Bin emptied since) is real, separate work this session didn't include. `UndoAsync` returns a clear, structured failure for a Delete operation rather than a silently-wrong or partially-correct attempt — consistent with the "parse now, execute later" pattern already used for `QueryPlanner`'s `dup:`/`empty:`/`content:` predicates. |
+| 2026-08-09 | Used `GrpcDotNetNamedPipes` for T37 instead of full `Grpc.AspNetCore` + Kestrel's named-pipe transport | Confirmed available via the same `dotnet add package` check used for Vanara — resolved cleanly at 3.1.0. A background Engine process hosting four narrow RPC services has no use for an HTTP server stack; this package frames gRPC directly over `NamedPipeServerStream`/`NamedPipeClientStream`, which is a much closer match to what §6.8 actually asks for (schema-first contracts, streaming, cancellation — not "run a web server"). |
+| 2026-08-09 | Created `Zara.EngineClient` (not `Zara.App/Services`) for `EngineProcessManager`/`EngineClient`/`ReconnectBackoff` | Same reasoning as `Zara.Operations`'s decision log entry: `Zara.App` is WPF, which doesn't exist in this non-interactive continuation (M5 is explicitly deferred pending Spike S2), but process supervision and the gRPC client are UI-independent, fully real, fully testable work that shouldn't wait on a WPF project existing. The future `Zara.App` references this rather than hosting the logic itself. |
+| 2026-08-09 | Hand-rolled `[DllImport]` for the Job Object APIs (`CreateJobObject`/`SetInformationJobObject`/`AssignProcessToJobObject`) rather than a wrapper package | Same reasoning as `Zara.Filesystem`'s `NativeMethods` (T04) and the opposite of T31's `IFileOperation` call: Job Objects are a flat, well-documented Win32 API with stable struct layouts, not a vtable-ordered COM interface — the risk profile that justified pulling in Vanara for `IFileOperation` doesn't apply here. Verified against a real spawned process actually being killed by the job object with no clean shutdown, not just a clean build. |
+| 2026-08-09 | **Found by running T37's tests, not by inspection:** the pipe DACL denied its own owner | The first version of `BuildOwnerOnlyPipeSecurity` added an Allow rule for the current user's SID PLUS an explicit Deny rule for `Everyone`, "for defense-in-depth". Wrong: the current user is themselves a member of `Everyone`, and Windows canonicalizes ACLs with Deny ACEs evaluated before Allow ACEs regardless of insertion order — so the Deny-Everyone rule shadowed the Allow rule for the owner too, and every client, including the legitimate one, got `UnauthorizedAccessException`. Fixed by removing the redundant Deny rule — a `PipeSecurity` with a single Allow rule for one principal already denies everyone else by default (Windows access control is deny-by-default). All 6 `EngineHostTests` failed identically before the fix, passed identically after. |
+| 2026-08-09 | **Found by running T37's tests on this sandboxed environment:** `AdminServiceImpl`'s uptime is computed via `Stopwatch`, not `DateTime.UtcNow` subtraction | Two `DateTime.UtcNow` calls milliseconds apart occasionally disagreed enough to produce a negative "elapsed" value — `DateTime.UtcNow` is not guaranteed monotonic (it can step backward across a clock-sync adjustment), which matters more in a virtualized/sandboxed environment than on bare metal. `Stopwatch` is built specifically to be immune to this for elapsed-time measurements. A one-line fix, but the kind of bug that would have shipped invisibly without actually running the code. |
+| 2026-08-09 | **Found twice, by running T39's tests:** `DefaultSkipList`'s hard exclusions caught two different test scan-root locations in a row | First under `Path.GetTempPath()` (the by-now-familiar gotcha — see M2/M3's decision log entries), then under `AppContext.BaseDirectory`, which is itself a `bin\Debug\...` path for any .NET test assembly and matched the `["bin","debug"]` rule meant to exclude *other projects'* build output (§10.5). Diagnosed by adding a temporary direct-call test that bypassed `StartupScanHostedService`'s swallowed exception handling and printed real intermediate values (files-on-disk count, raw enumerator count, orchestrator result) rather than guessing — isolated the cause in two steps instead of by trial and error. Fixed by using a drive-root test location (`C:\ZaraEngineTests\<guid>`) that matches none of `DefaultSkipList`'s patterns. Worth noting as a standing hazard: **almost any convenient throwaway test location on a dev machine matches one of these rules** (Temp, bin/Debug, node_modules, .git — all common), so a new test scanning real files should default to suspecting this first. |
 | 2026-08-09 | T35's undo property test is a hand-written randomized loop (15 trials, real I/O per trial), not FsCheck, despite `FsCheck.Xunit` already being a referenced package | Every check here performs a real Shell COM operation and real SQLite writes per trial — slow, stateful I/O that doesn't fit FsCheck's usual "cheap pure function, hundreds of generated inputs" model, and wiring FsCheck's generators correctly under time pressure for an unfamiliar case was a worse trade than a manual loop that tests the identical property (`undo(op(fs)) == fs`, byte-identical) with full confidence. `FsCheck.Xunit` remains available for a future property test whose subject is a pure function (e.g. `DslParser`, `CanonicalPath` normalization) where its generator-based approach is the natural fit. |
 
 ---
 
 ## Notes for the next session
 
-- **M1–M4 are complete, and M6's non-UI pieces (T31/T32/T33/T35) are done
-  too.** What's left in reach without an interactive/visual environment:
+- **M1–M4, M6's non-UI pieces (T31/T32/T33/T35), and now all of M7 are
+  done.** Confirmed with a full from-scratch solution test run:
+  **378/378 passing** (16+2+40+124+110+8+34+20+9+15 across 10 test
+  projects — `Zara.Core.Tests`, `Zara.ArchitectureTests`,
+  `Zara.Storage.Tests`, `Zara.Filesystem.Tests`, `Zara.Search.Tests`,
+  `Zara.Operations.Tests`, `Zara.Volumes.Tests`, `Zara.Indexing.Tests`,
+  `Zara.Engine.Tests`, `Zara.EngineClient.Tests`). **Note:**
+  `Zara.EngineClient.Tests` alone takes ~3 minutes (it spawns real
+  `Zara.Engine.exe` processes repeatedly) — background the full-suite run
+  rather than waiting on it in the foreground.
+
+  What's left in reach without an interactive/visual environment:
 
   - **T34's non-dialog half** — undo stack depth (50) and 24h expiry
     bookkeeping on top of `IOperationJournal.GetUndoableAsync`. Small,
     well-scoped, real backend work. The `OperationPreviewDialog` itself
     still needs UI (M5).
-  - **M7 (Two-Process Split)** — `Zara.Contracts` (`.proto` definitions),
-    `Zara.Engine` (Generic Host + named-pipe gRPC server, owner-SID-only
-    DACL). This is genuinely continuable non-interactively: gRPC server
-    startup, a named pipe client/server round-trip, and DACL correctness
-    are all things a real client can connect to and verify from a test —
-    no rendering required. Start here if picking this up again without a
-    visual environment. See ARCHITECTURE.md §9 for the process
-    architecture and §8.1 for exactly which RPCs `Zara.Engine` exposes.
+  - **M8 (Query Compiler, first AI feature)** — T41 (`Zara.Ai`:
+    `ILlmProvider` + `OllamaProvider`) needs a real Ollama installation
+    reachable from this environment to test against genuinely (not just
+    mock the HTTP contract) — check whether that's available before
+    assuming T41 is fully continuable non-interactively the way M7 was.
+    T42 (`IntentRouter` pattern-matching) and T44 (post-generation
+    validation) are pure logic, fully testable regardless. T45
+    (`QueryChipEditor` UI) needs WPF, same as M5.
+  - Wiring `QueryPlanner`'s `dup:`/`empty:` `UnsupportedPredicates` to the
+    now-existing `DuplicateFinder`/`EmptyFolderFinder` (flagged since M4,
+    still not done) is a good small task if a smaller unit of work is
+    wanted before committing to M8's larger scope.
 
-  **M5 (WPF Shell) remains the deliberate stopping point it was flagged as
-  last session** — still blocked on Spike S2 (WPF at 1M rows), which needs
-  the same visual verification M5 itself does. Every milestone through M6
-  was verified by actually running it: real files, real databases, real
-  Shell COM calls (T31 caught two genuine environment bugs — an STA
-  threading requirement and a `\\?\`-prefix incompatibility — that no
-  amount of code review would have found). WPF breaks that loop; don't
-  lower the bar for it. If picking this up in an interactive session
-  (Claude Code with a visible IDE, or a human developer), start with S2,
-  then T25–T30.
+  **M5 (WPF Shell) remains the deliberate stopping point** — still blocked
+  on Spike S2 (WPF at 1M rows), which needs the same visual verification
+  M5 itself does. Every milestone through M7 was verified by actually
+  running it: real files, real databases, real Shell COM calls, real
+  spawned processes killed via real Job Objects, a real gRPC server over a
+  real named pipe. M7 alone found three genuine bugs this way (pipe DACL
+  denying its own owner, non-monotonic uptime, a skip-list rule catching
+  its own test's scan root) that no amount of code review would have
+  caught. WPF breaks that verification loop; don't lower the bar for it
+  when M5 is eventually picked up interactively — start with S2, then
+  T25–T30.
 - Run `dotnet test` before marking any task `[x]`; for anything
   performance-sensitive, get a real number rather than assume one — T21
   alone caught two real bugs (a full-sort-instead-of-top-K in `NameIndex`,
@@ -218,11 +241,15 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
   500k-entry scale. That's now the established pattern for every
   performance-sensitive piece of code in this repo — trust it.
 - If a task reveals the architecture doc is wrong, fix ARCHITECTURE.md in the same commit and log it above — don't let drift accumulate.
-- Current repo state: solution has **20 projects** (11 `src/` — adds
-  `Zara.Operations`; 8 `tests/` — adds `Zara.Operations.Tests`; 1
-  `benchmarks/Zara.Scenarios`), **354/354** tests passing, seven commits on
+- Current repo state: solution has **24 projects** (13 `src/` — adds
+  `Zara.Contracts`, `Zara.Engine`, `Zara.EngineClient`; 10 `tests/` — adds
+  `Zara.Engine.Tests`, `Zara.EngineClient.Tests`; 1
+  `benchmarks/Zara.Scenarios`), **378/378** tests passing, eight commits on
   `master` (once this session's work is committed). `dotnet build` /
-  `dotnet test` both clean from a fresh clone.
+  `dotnet test` both clean from a fresh clone (use `dotnet build
+  Zara.slnx`/`dotnet test` at the solution level — passing multiple
+  individual project paths to one `dotnet build` invocation fails with
+  MSB1008, "only one project can be specified").
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- list
     <fileCount>` reproduces T09's directory-listing numbers.
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- scan
@@ -231,22 +258,27 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
   - `dotnet run --project benchmarks/Zara.Scenarios -c Release -- search
     <totalFiles>` reproduces T21's name-search and structured-query latency
     numbers (default: 500,000).
+  - `Zara.Engine.exe --pipe-name=... --db-path=... --scan-root=...` runs a
+    real standalone Engine instance outside of tests, e.g. for manual
+    poking with a gRPC client tool.
 - `QueryPlanner`'s `UnsupportedPredicates` for `dup:`/`empty:` (T20's
   decision log entry) can now become real WHERE-clause fragments —
   `DuplicateFinder`/`EmptyFolderFinder` exist as of M4. Nobody's wired that
   up yet; it's a small, well-scoped follow-up whenever `QueryPlanner` gets
   revisited.
 - `IUndoService` cannot undo a Delete (Recycle Bin restore not implemented
-  — see decision log). If M7's Engine ever exposes undo over gRPC, that
-  gap needs to be either closed or surfaced clearly in the RPC contract
-  (e.g. a typed "not supported for this operation kind" response), not
-  silently absent.
-- Phase 0 spikes (S1–S4) are still outstanding. M2–M4 and M6's non-UI work
-  all shipped without them per the sequencing note — real-junction tests,
-  from-scratch-correct NT struct interop, T21's benchmark catching two
-  genuine bugs, and now T31's real STA-threading and Shell32-path-syntax
-  bugs are exactly the kind of evidence that note said would lower S1's
-  risk, and it's kept doing so every milestone. **S2 (WPF) and S3 (LLM
+  — see decision log), and `Zara.Engine`'s `JournalServiceImpl` exposes
+  `GetUndoable` but not `Undo` itself yet — no RPC currently triggers an
+  undo at all. Both gaps need to be closed (or surfaced as a typed "not
+  supported yet" response) before undo is usable end-to-end through the
+  Engine rather than only through `Zara.Operations` directly.
+- Phase 0 spikes (S1–S4) are still outstanding. M2–M4, M6's non-UI work,
+  and now M7 all shipped without them per the sequencing note — real-
+  junction tests, from-scratch-correct NT struct interop, T21's benchmark
+  catching two genuine bugs, T31's STA-threading/Shell32-path bugs, and
+  now T37/T39's DACL/monotonic-clock/skip-list bugs are exactly the kind
+  of evidence that note said would lower S1's risk, and it's kept doing so
+  every single milestone without exception so far. **S2 (WPF) and S3 (LLM
   grammar reliability) are the two blockers that actually matter now** —
   M5 needs the former, M8 needs the latter, and neither can be de-risked
   further by more backend work.

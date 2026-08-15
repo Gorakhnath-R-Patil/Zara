@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zara.Core\Zara.Core.csproj" />
+    <ProjectReference Include="..\Zara.Contracts\Zara.Contracts.csproj" />
+    <ProjectReference Include="..\Zara.Filesystem\Zara.Filesystem.csproj" />
+    <ProjectReference Include="..\Zara.Volumes\Zara.Volumes.csproj" />
+    <ProjectReference Include="..\Zara.Search\Zara.Search.csproj" />
+    <ProjectReference Include="..\Zara.Storage\Zara.Storage.csproj" />
+    <ProjectReference Include="..\Zara.Indexing\Zara.Indexing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="GrpcDotNetNamedPipes" />
+    <PackageReference Include="Grpc.Core.Api" />
+  </ItemGroup>
+
+</Project>

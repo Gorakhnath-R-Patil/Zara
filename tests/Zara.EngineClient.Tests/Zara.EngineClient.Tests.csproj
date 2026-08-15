@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Zara.Contracts\Zara.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Zara.EngineClient\Zara.EngineClient.csproj" />
+    <!-- Real exe under test for T38/T40 — referencing it (even though it's
+         an Exe project) makes MSBuild copy Zara.Engine.exe into this
+         project's own output directory as a build dependency, so tests can
+         spawn the actual, real Engine binary rather than a stand-in. -->
+    <ProjectReference Include="..\..\src\Zara.Engine\Zara.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
