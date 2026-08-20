@@ -21,6 +21,12 @@ if (args.Length > 0 && string.Equals(args[0], "search", StringComparison.Ordinal
     return 0;
 }
 
+if (args.Length > 0 && string.Equals(args[0], "golden", StringComparison.OrdinalIgnoreCase))
+{
+    GoldenSetScenario.Run();
+    return 0;
+}
+
 // B12 (ARCHITECTURE.md §32.2): directory listing at scenario scale.
 // T09's exit bar: 100k-file directory listing < 400ms, < 20MB allocated.
 //

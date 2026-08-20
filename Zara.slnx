@@ -5,6 +5,9 @@
     </Project>
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Zara.Ai/Zara.Ai.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Zara.Contracts/Zara.Contracts.csproj">
       <Platform Project="x64" />
     </Project>
@@ -33,6 +36,9 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Zara.Ai.Tests/Zara.Ai.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="tests/Zara.ArchitectureTests/Zara.ArchitectureTests.csproj">
       <Platform Project="x64" />
     </Project>

@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Zara.Storage\Zara.Storage.csproj" />
     <ProjectReference Include="..\..\src\Zara.Indexing\Zara.Indexing.csproj" />
     <ProjectReference Include="..\..\src\Zara.Search\Zara.Search.csproj" />
+    <ProjectReference Include="..\..\src\Zara.Ai\Zara.Ai.csproj" />
   </ItemGroup>
 
   <ItemGroup>
