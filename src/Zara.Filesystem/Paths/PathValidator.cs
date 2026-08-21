@@ -55,10 +55,11 @@ public sealed class PathValidator : IPathValidator
         }
 
         // ── 2. Canonicalize — the only step that touches the OS. ───────────────
+        bool existsOnDisk = File.Exists(rawPath) || Directory.Exists(rawPath);
         CanonicalPath canonical;
         try
         {
-            canonical = ResolveCanonical(rawPath, purpose);
+            canonical = ResolveCanonical(rawPath, purpose, existsOnDisk);
         }
         catch (IOException ex)
         {
@@ -76,22 +77,57 @@ public sealed class PathValidator : IPathValidator
 
         // ── 3. Root containment, on the CANONICAL form — this is what makes
         //      "C:\Users\bobby" correctly fail against an allowed root of
-        //      "C:\Users\bob" (segment comparison, never a raw StartsWith), and
-        //      what re-validates *after* symlink/junction resolution rather
-        //      than trusting the caller's literal string (§17.3 items 6–7). ────
+        //      "C:\Users\bob" (segment comparison, never a raw StartsWith)
+        //      (§17.3 item 6). ─────────────────────────────────────────────────
         if (allowedRoots.Count > 0 && !IsWithinAnyRoot(canonical.Value, allowedRoots))
         {
             return ValidationResult.Invalid("Path is outside every allowed root.");
         }
 
+        // ── 4. Re-verify AFTER reparse resolution (§17.3 item 7) — the TOCTOU
+        //      defense. `canonical` above deliberately does NOT follow a
+        //      symlink/junction to its target (so callers get back the
+        //      reparse point's own identity — e.g. deleting it deletes the
+        //      LINK, not the target). But that means step 3's containment
+        //      check only proved the LINK is inside an allowed root; it says
+        //      nothing about where the link actually LEADS. A junction whose
+        //      own path looks perfectly safe can still point somewhere the
+        //      containment check would have refused outright — so resolve it
+        //      for real and check THAT too. For an ordinary (non-reparse)
+        //      path this resolves to the identical location and is a no-op
+        //      check. Only runs when the path already exists — a prospective
+        //      write target has nothing to resolve yet, and
+        //      CanonicalizeProspective's own docs already say a prospective
+        //      path is advisory, not a security boundary, until it's
+        //      re-validated after coming into existence. ─────────────────────
+        if (allowedRoots.Count > 0 && existsOnDisk)
+        {
+            CanonicalPath resolvedTarget;
+            try
+            {
+                resolvedTarget = _canonicalizer.ResolveFollowingReparsePoints(rawPath);
+            }
+            catch (IOException ex)
+            {
+                return ValidationResult.Invalid($"Unable to resolve path target: {ex.Message}");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return ValidationResult.Invalid("Access denied while resolving path target.");
+            }
+
+            if (!IsWithinAnyRoot(resolvedTarget.Value, allowedRoots))
+            {
+                return ValidationResult.Invalid("Path resolves (through a symlink or junction) to a location outside every allowed root.");
+            }
+        }
+
         return ValidationResult.Valid(canonical);
     }
 
-    private CanonicalPath ResolveCanonical(string rawPath, PathPurpose purpose)
+    private CanonicalPath ResolveCanonical(string rawPath, PathPurpose purpose, bool existsOnDisk)
     {
-        bool exists = File.Exists(rawPath) || Directory.Exists(rawPath);
-
-        if (exists)
+        if (existsOnDisk)
         {
             return _canonicalizer.CanonicalizeExisting(rawPath);
         }

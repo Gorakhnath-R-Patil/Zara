@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zara.Core\Zara.Core.csproj" />
+    <ProjectReference Include="..\Zara.Filesystem\Zara.Filesystem.csproj" />
+  </ItemGroup>
+
+</Project>

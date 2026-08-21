@@ -11,10 +11,16 @@ public sealed class PathCanonicalizer : IPathCanonicalizer
     // Initial guess for GetFinalPathNameByHandle's output buffer. Almost every
     // real path fits comfortably; GetFinalPath grows this and retries on the
     // rare path that doesn't, so this is a perf tuning knob, not a correctness
-    // one — see the loop in CanonicalizeExisting.
+    // one — see the loop in ResolveViaHandle.
     private const int InitialBufferChars = 512;
 
-    public CanonicalPath CanonicalizeExisting(string path)
+    public CanonicalPath CanonicalizeExisting(string path) =>
+        ResolveViaHandle(path, NativeMethods.FileFlagBackupSemantics | NativeMethods.FileFlagOpenReparsePoint);
+
+    public CanonicalPath ResolveFollowingReparsePoints(string path) =>
+        ResolveViaHandle(path, NativeMethods.FileFlagBackupSemantics);
+
+    private static CanonicalPath ResolveViaHandle(string path, uint flagsAndAttributes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
@@ -35,7 +41,7 @@ public sealed class PathCanonicalizer : IPathCanonicalizer
             NativeMethods.FileShareRead | NativeMethods.FileShareWrite | NativeMethods.FileShareDelete,
             lpSecurityAttributes: 0,
             NativeMethods.OpenExisting,
-            NativeMethods.FileFlagBackupSemantics | NativeMethods.FileFlagOpenReparsePoint,
+            flagsAndAttributes,
             hTemplateFile: 0);
 
         if (handle.IsInvalid)

@@ -28,6 +28,9 @@
     <Project Path="src/Zara.Search/Zara.Search.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="src/Zara.Security/Zara.Security.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/Zara.Storage/Zara.Storage.csproj">
       <Platform Project="x64" />
     </Project>
@@ -57,6 +60,9 @@
       <Platform Project="x64" />
     </Project>
     <Project Path="tests/Zara.Search.Tests/Zara.Search.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tests/Zara.Security.Tests/Zara.Security.Tests.csproj">
       <Platform Project="x64" />
     </Project>
     <Project Path="tests/Zara.Storage.Tests/Zara.Storage.Tests.csproj">

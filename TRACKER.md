@@ -13,7 +13,7 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | Phase | Status | Started | Target exit |
 |---|---|---|---|
 | 0 — Spikes | `[ ]` not started (see note) | — | 4 spikes green |
-| 1 — Functional MVP | `[~]` in progress — **M1–M4, M6/M8 non-UI pieces, M7 complete**, M5/T45 (UI) waiting on Spike S2, M9 next | 2026-08-09 | §29.2 criteria met |
+| 1 — Functional MVP | `[~]` in progress — **M1–M4, M6/M8/M9 non-UI pieces, M7 complete**, M5/T45/T47 (UI) waiting on Spike S2, T50 (soak/dogfood) needs real time | 2026-08-09 | §29.2 criteria met |
 | 2 — Content & speed | `[ ]` not started | — | — |
 | 3 — Controlled operations | `[ ]` not started | — | — |
 | 4 — Windows integration | `[ ]` not started | — | — |
@@ -138,11 +138,11 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 
 **M8 non-UI exit: 86 new tests in `Zara.Ai.Tests` (5+46+30+5), full solution regression pending confirmation (see notes-for-next-session).** The standout result of this milestone is T43/T46 together: the single riskiest unverified architectural bet in the whole document — "can a 4B local model reliably compile natural language into a constrained JSON query" — was tested against the real target model on (an approximation of) the real target hardware, not assumed. It held up. The real, measured latency (~7-8s/call) not matching the architecture doc's aspirational ~600ms is itself valuable, honest signal, not a discrepancy to paper over — see the decision log.
 
-### Milestone M9 — MVP Hardening
-- [ ] **T47** Diagnostics page (§26.2 metrics rendered locally)
-- [ ] **T48** ResourceGovernor v1 (foreground/idle/battery states; `PROCESS_MODE_BACKGROUND_BEGIN`)
-- [ ] **T49** Full security suite (§27.1) green in CI
-- [ ] **T50** 72h soak test; §29.2 exit criteria all verified; **dogfood for 2 weeks**
+### Milestone M9 — MVP Hardening — **[x] NON-UI/NON-TIME-BOUND PIECES COMPLETE, 2026-08-09**
+- [ ] **T47** Diagnostics page — **not built.** It's explicitly a *page* (§26.2: UI, needs WPF, same blocker as M5). Deliberately not built as an unused metrics-backend stub either — `System.Diagnostics.Metrics` instrumentation with nothing consuming it yet would be scaffolding nobody exercises, the same anti-pattern M8's decision log already rejected for the semantic cache. Real work for whoever wires this up: instrument the meters §26.2 lists across the components that already exist, THEN build the page.
+- [x] **T48** `Zara.Indexing.Governance`: `ResourceGovernor` v1 — scoped to exactly what the tracker asked for (foreground/idle/battery states + `PROCESS_MODE_BACKGROUND_BEGIN`), not §25.1's full table (CPU%, free RAM, disk queue length, temperature — real, separate follow-ups). Pure decision logic (`ResourceGovernor`) tested deterministically against every rule via fake providers; the providers themselves (`PowerStateProvider`, `IdleTimeProvider`, `ForegroundWindowProvider`, `BackgroundModeController`) tested against the real OS on this real machine — including actually toggling `PROCESS_MODE_BACKGROUND_BEGIN`/`_END` on the live test process and confirming the OS accepted it. 15/15 tests.
+- [x] **T49** Security suite (§27.1), the PATH/SYMLINK/POLICY thirds — **found and fixed a real security gap while building this, not by inspection.** New `Zara.Security` project: `RiskClass`/`RiskClassifier`/`PolicyEngine`/`BlockedRoots` implementing §17.2's full risk table (this didn't exist before M9 — nothing gated a mutating operation on risk classification until now). Building the adversarial SYMLINK suite exposed that `PathValidator` never actually implemented §17.3 item 7 ("re-verify AFTER any reparse resolution") — a junction whose own path looked safe could point anywhere, undetected, because `CanonicalizeExisting` intentionally opens with `FILE_FLAG_OPEN_REPARSE_POINT` (correct for `WalkScanner`'s "detect, don't follow" need, wrong for security re-validation, which needs the opposite). Fixed by adding `IPathCanonicalizer.ResolveFollowingReparsePoints` and having `PathValidator` check containment against BOTH forms. 80 tests total (25 `RiskClassifierTests` + 3 `PolicyFuzzTests`, each 10,000 iterations + 12 `PathSuiteTests` + 3 `SymlinkSuiteTests`, all in `Zara.Security.Tests`, plus the `PathValidatorTests`/`ShellOperationsTests` regressions the fix touched). **INJECTION suite explicitly not built** — it needs a prompt/content pipeline that doesn't exist until Phase 2/the agent layer; nothing to test yet, not a gap to fake. "Green in CI" doesn't apply — no CI pipeline exists in this repo (same gap M8's decision log already flagged).
+- [ ] **T50** 72h soak test; 2-week dogfood — **not attempted; cannot be, in a single non-interactive session.** Left explicitly undone rather than simulated or asserted without evidence.
 
 > Tasks beyond T50 (Phase 2+: MFT/USN scanner, content extraction, embeddings, hybrid ranking,
 > agent/tool system, Explorer shell extension, network drives) are deliberately not itemized yet —
@@ -196,20 +196,53 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 | 2026-08-09 | `QueryCompiler`'s semantic cache (§14.2: "semantic cache hit? ... reuse compiled query") was not built, not even as a stub | It needs an embedding model and a vector similarity store, neither of which exist until Phase 2 (§11.8/§13). A stub that always misses would add an unused code path and a misleading appearance of completeness for zero actual benefit — the router's deterministic tiers (DSL/single-token/pattern-match) already capture the cheap wins this cache targets; the semantic tier is real, separate, later work. |
 | 2026-08-09 | T43's live-measured LLM latency (~7-8s/call on this hardware) is reported as-is in TRACKER.md rather than reconciled with §14.4's ~600ms "warm, cached-prefix" aspiration | The honest reading: §14.4's figure assumes a warm KV-cache from an identical, byte-for-byte-repeated system-prompt prefix and a fully warmed-up GPU-resident model; this session's test run made a handful of calls with varying prompts, on a model that had just recovered from a cold-start CUDA crash, likely without sustained GPU residency between calls. Both numbers can be true in their own context. Recording the real number here rather than only the aspirational one is deliberate — a future session tuning real latency needs the honest baseline, not the target restated as if it were already measured. |
 | 2026-08-09 | T45 (`QueryChipEditor` UI) and T46's "wired into CI" half were left undone, not faked | The former needs WPF (same blocker as M5, Spike S2); the latter needs a CI pipeline, which this repository does not have configured at all. Both are called out explicitly in TRACKER.md rather than silently omitted or stubbed to look complete. |
+| 2026-08-09 | **Found by writing T49's adversarial SYMLINK suite, not by inspection:** `PathValidator` never actually implemented §17.3 item 7 ("re-verify AFTER any reparse resolution") | `CanonicalizeExisting` opens with `FILE_FLAG_OPEN_REPARSE_POINT` — deliberately, so `WalkScanner` can detect a reparse point AS a reparse point instead of being silently redirected to its target (§10.4's "never auto-descend"). But `PathValidator` was reusing that SAME method for its own containment check, which means it was checking where a junction's own path sits, never where the junction actually LEADS — a junction inside an allowed root pointing anywhere outside it would have passed validation undetected. Two new tests (`JunctionPointingOutsideTheAllowedRoot_FailsValidation...`, `RevalidatingAfterAPathIsSwappedForAJunction...`) failed immediately and made the gap obvious. Fixed by adding `IPathCanonicalizer.ResolveFollowingReparsePoints` (same resolution, without the flag) and checking containment against both the non-following AND following forms — the non-following form is still what's returned to the caller (so a delete still targets the LINK, not the target, matching the OTHER symlink test's requirement), only the extra containment check uses the following form. This is exactly the kind of gap a security-focused adversarial test suite exists to find; it would not have been caught by the existing (still entirely correct, just insufficiently adversarial on this specific axis) `PathValidatorTests`. |
+| 2026-08-09 | `Zara.Security`'s `RiskClassifier`/`PolicyEngine` are new as of M9 — nothing gated a mutating operation on risk classification before this | `Zara.Operations`' `UndoService`/`ShellOperations` (M6) execute real file operations directly; `OperationPlan.RiskClass` has existed as a placeholder `string = "unknown"` field since M6 specifically anticipating this. T49's fuzz tests (30,000 total random-operation iterations across three properties) are the first real verification that risk escalates monotonically and BLOCKED_ROOTS is never bypassable — a real, previously-unverified safety property, not a re-check of something already covered. **Not yet wired in**: nothing calls `PolicyEngine.Evaluate` before `ShellOperations.ExecuteAsync` runs — that wiring (plus updating `OperationPlan.RiskClass` from its placeholder string to the real enum) is real, obvious, and not yet done follow-up work. |
+| 2026-08-09 | `RiskClassifier`'s ">100 items OR >1GB → Critical" escalation is scoped to `Delete` only, matching §17.2's literal wording, even though a huge Move/Copy might feel similarly risky | The architecture table specifically ties that threshold to delete ("CRITICAL delete >100 items OR >1 GB"); a large Move/Copy already escalates to High via the >50-items rule and stays there. Tested explicitly (`Classify_MoveOver100ItemsButNotDelete_DoesNotReachCritical`) so a future change to broaden this is a deliberate decision, not an accidental regression discovered later. |
+| 2026-08-09 | `ResourceGovernor` v1 covers only foreground/idle/battery + `PROCESS_MODE_BACKGROUND_BEGIN` — not §25.1's full table (CPU%, free RAM, disk queue length, CPU temperature via WMI, fullscreen/presentation detection) | Matches the tracker's own T48 wording exactly, and each additional signal is a genuinely separate provider + a separate decision rule, not a natural extension of what's built — better to ship a real, fully-tested v1 covering three signals than a half-tested v1 gesturing at eight. Revisit as real scan-throughput data shows which of the remaining signals actually matter on real hardware. |
 
 ---
 
 ## Notes for the next session
 
-- **M1–M4, M6's non-UI pieces (T31/T32/T33/T35), M7, and now M8's non-UI
-  pieces (T41-T44/T46) are all done.** Confirmed with a full from-scratch
-  solution test run: **464/464 passing** across 11 test projects — the
-  10 from M7's exit plus the new `Zara.Ai.Tests` (86: 5 `OllamaProviderTests`
-  + 46 `IntentRouterTests` + 30 `QueryOutputValidatorTests` + 5
-  `QueryCompilerTests`). **Note:** `Zara.EngineClient.Tests` (~3 min, real
-  spawned processes) and `Zara.Ai.Tests` (~35-40s, real live LLM calls) both
-  make the full-suite run slow — background it rather than waiting on it in
-  the foreground, same as last session.
+- **M1–M4, M6's non-UI pieces (T31/T32/T33/T35), M7, M8's non-UI pieces
+  (T41-T44/T46), and now M9's non-UI/non-time-bound pieces (T48/T49) are all
+  done.** Confirmed with a full from-scratch solution test run:
+  **522/522 passing** across 12 test projects — the 11 from M8's exit plus
+  the new `Zara.Security.Tests` (43: 25 `RiskClassifierTests` + 3
+  `PolicyFuzzTests` (10,000 iterations each, fixed seed) + 12
+  `PathSuiteTests` (§27.1's PATH suite, verbatim) + 3 `SymlinkSuiteTests`
+  (real `mklink /J` junctions)) plus 15 new tests added to
+  `Zara.Indexing.Tests` for T48's `Governance/` folder (5 `RealProviderTests`
+  against the real Win32 APIs + 10 `ResourceGovernorTests` against fakes).
+  Per-project counts from the final run: Core=16, ArchitectureTests=2,
+  Storage=40, Filesystem=124, Search=110, **Security=43 (new)**,
+  Operations=8, Indexing=35, Engine=9, EngineClient=15, Ai=86, Volumes=34.
+  **Note:** `Zara.EngineClient.Tests` (~3 min, real spawned processes) and
+  `Zara.Ai.Tests` (~35-60s, real live LLM calls) both make the full-suite run
+  slow — background it rather than waiting on it in the foreground, same as
+  last session.
+
+  **T49's headline finding: a real TOCTOU/reparse-resolution security gap in
+  `PathValidator`**, found by two new adversarial junction tests failing on
+  first run, not by code review. `PathValidator` never implemented §17.3
+  item 7 (re-verify containment after resolving through symlinks/junctions);
+  `PathCanonicalizer.CanonicalizeExisting` opens with
+  `FILE_FLAG_OPEN_REPARSE_POINT`, which is correct for M2's WalkScanner
+  (stop at the reparse point, don't follow it) but wrong for security
+  validation (a junction *inside* an allowed root pointing *outside* it
+  passed validation undetected). Fixed by adding
+  `IPathCanonicalizer.ResolveFollowingReparsePoints` (opens without that
+  flag, so `GetFinalPathNameByHandle` follows the reparse chain to its real
+  target) and a new step-4 containment re-check in `PathValidator.Validate`,
+  gated on `existsOnDisk` so it doesn't regress the not-yet-existing
+  write-destination case (that regression happened once during the fix and
+  was caught immediately by the existing test suite, then corrected). Full
+  narrative in the decision log above. **`PolicyEngine.Evaluate` is now a
+  real, tested gate (Zara.Security) but is not yet called from
+  `ShellOperations`/`UndoService` before an operation executes** — the gate
+  exists, the wiring doesn't yet. That's the most natural next small task if
+  someone wants one.
 
   **This session found that Ollama is genuinely installed in this
   environment** (`gemma3:4b`, `qwen3:4b`, `phi4-mini`, `qwen3:1.7b`,
@@ -225,13 +258,17 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 
   What's left in reach without an interactive/visual environment:
 
+  - **Wire `PolicyEngine.Evaluate` into `ShellOperations`/`UndoService`** so
+    the risk gate built this session actually sits in front of real
+    operation execution instead of standing next to it, unwired. Real,
+    well-scoped, fully testable without UI — the most natural next task.
   - **T34's non-dialog half** — undo stack depth (50) and 24h expiry
     bookkeeping on top of `IOperationJournal.GetUndoableAsync`. Small,
     well-scoped, real backend work. The `OperationPreviewDialog` itself
     still needs UI (M5).
-  - **M9 (MVP Hardening)** — check ARCHITECTURE.md/the tracker's M9 task
-    list (T47+) before starting; not yet reviewed against what's
-    non-interactively continuable the way M7/M8 were.
+  - `OperationPlan.RiskClass` is still a placeholder `string = "unknown"`
+    field — now that a real `RiskClass` enum exists (`Zara.Security`), wire
+    plans to actually populate it via `IRiskClassifier`.
   - Wiring `QueryPlanner`'s `dup:`/`empty:` `UnsupportedPredicates` to the
     now-existing `DuplicateFinder`/`EmptyFolderFinder` (flagged since M4,
     still not done) is a good small task if a smaller unit of work is
@@ -241,19 +278,29 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
     real RPC is real, well-scoped, non-interactively-testable work whenever
     someone wants undo reachable through the Engine rather than only
     directly.
+  - **What's genuinely NOT built and shouldn't be faked:** T47 (diagnostics
+    UI page) and T45 (`QueryChipEditor`) both need WPF; T50 (72h soak +
+    2-week dogfood) needs real elapsed time no session can compress; the
+    INJECTION security suite from §27.1 needs a prompt/content pipeline
+    that doesn't exist until the Phase 2 agent layer; "wired into CI" isn't
+    meaningful yet because this repo has no CI pipeline at all. All four are
+    explicitly left `[ ]` rather than stubbed to look done.
 
   **M5 (WPF Shell) and T45 (`QueryChipEditor`, needs the same WPF) remain
   the deliberate stopping points** — both blocked on Spike S2 (WPF at 1M
   rows), which needs the same visual verification they themselves do.
-  Every milestone through M8 was verified by actually running it: real
+  Every milestone through M9 was verified by actually running it: real
   files, real databases, real Shell COM calls, real spawned processes
   killed via real Job Objects, a real gRPC server over a real named pipe,
-  and now a real local LLM. M7 alone found three genuine bugs this way
+  a real local LLM, and now real `mklink /J` junctions used adversarially
+  against the security layer. M7 alone found three genuine bugs this way
   (pipe DACL denying its own owner, non-monotonic uptime, a skip-list rule
   catching its own test's scan root); M8 found two more (a real transient
   Ollama/CUDA crash correctly handled, and a real `IntentRouter` ordering
-  bug). WPF breaks that verification loop; don't lower the bar for it when
-  M5 is eventually picked up interactively — start with S2, then T25–T30.
+  bug); M9 found a real TOCTOU/reparse-resolution gap in `PathValidator`
+  (see above). WPF breaks that verification loop; don't lower the bar for
+  it when M5 is eventually picked up interactively — start with S2, then
+  T25–T30.
 - Run `dotnet test` before marking any task `[x]`; for anything
   performance-sensitive, get a real number rather than assume one — T21
   alone caught two real bugs (a full-sort-instead-of-top-K in `NameIndex`,
@@ -262,9 +309,9 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
   500k-entry scale. That's now the established pattern for every
   performance-sensitive piece of code in this repo — trust it.
 - If a task reveals the architecture doc is wrong, fix ARCHITECTURE.md in the same commit and log it above — don't let drift accumulate.
-- Current repo state: solution has **26 projects** (14 `src/` — adds
-  `Zara.Ai`; 11 `tests/` — adds `Zara.Ai.Tests`; 1
-  `benchmarks/Zara.Scenarios`), **464/464** tests passing, nine commits on
+- Current repo state: solution has **28 projects** (15 `src/` — adds
+  `Zara.Security`; 12 `tests/` — adds `Zara.Security.Tests`; 1
+  `benchmarks/Zara.Scenarios`), **522/522** tests passing, ten commits on
   `master` (once this session's work is committed). `dotnet build` /
   `dotnet test` both clean from a fresh clone (use `dotnet build
   Zara.slnx`/`dotnet test` at the solution level — passing multiple

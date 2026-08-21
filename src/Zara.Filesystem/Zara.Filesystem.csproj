@@ -5,6 +5,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Zara.Security's PolicyEngine needs PathSyntax.IsSameOrDescendant for
+         BLOCKED_ROOTS deny-list checks (§17.2) — the same segment-comparison
+         logic IPathValidator already uses for allow-list containment, just
+         inverted. Exposing the whole (small, stable, already-adversarially-
+         tested) internal helper via InternalsVisibleTo avoids either
+         duplicating that logic or making it public API surface for everyone. -->
+    <InternalsVisibleTo Include="Zara.Security" />
+    <InternalsVisibleTo Include="Zara.Security.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="Blake3" />
     <PackageReference Include="Vanara.Windows.Shell" />
