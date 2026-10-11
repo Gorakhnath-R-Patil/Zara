@@ -258,10 +258,16 @@ Companion to [ARCHITECTURE.md](ARCHITECTURE.md). This file is the single source 
 
   What's left in reach without an interactive/visual environment:
 
-  - **Wire `PolicyEngine.Evaluate` into `ShellOperations`/`UndoService`** so
-    the risk gate built this session actually sits in front of real
-    operation execution instead of standing next to it, unwired. Real,
-    well-scoped, fully testable without UI — the most natural next task.
+  - ~~**Wire `PolicyEngine.Evaluate` into `ShellOperations`/`UndoService`**~~
+    **Done (2026-10-11):** `PolicyGatedShellOperations` in `Zara.Operations`
+    decorates `IShellOperations`, so every caller (including `UndoService`)
+    passes the gate. Block never runs the inner executor; confirmation goes
+    through a new `IOperationConfirmer` (default `DenyingOperationConfirmer`).
+    16 new tests. **Still open:** nothing constructs the gated executor yet
+    (`Zara.Engine`'s composition root doesn't build one), and no real
+    confirmer exists until there is a UI. Cross-volume detection compares
+    drive roots, so a mount point inside a volume is not seen as a different
+    volume.
   - **T34's non-dialog half** — undo stack depth (50) and 24h expiry
     bookkeeping on top of `IOperationJournal.GetUndoableAsync`. Small,
     well-scoped, real backend work. The `OperationPreviewDialog` itself

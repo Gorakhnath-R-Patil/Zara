@@ -5,6 +5,7 @@
     <ProjectReference Include="..\..\src\Zara.Filesystem\Zara.Filesystem.csproj" />
     <ProjectReference Include="..\..\src\Zara.Storage\Zara.Storage.csproj" />
     <ProjectReference Include="..\..\src\Zara.Operations\Zara.Operations.csproj" />
+    <ProjectReference Include="..\..\src\Zara.Security\Zara.Security.csproj" />
   </ItemGroup>
 
   <ItemGroup>

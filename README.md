@@ -23,7 +23,7 @@ Early development. The Phase 1 backend is largely complete and tested; **there i
 | WPF UI | Not started |
 | Content extraction, embeddings, agent (Phases 2+) | Not started |
 
-522 tests pass across 12 test projects.
+538 tests pass across 12 test projects.
 
 ## Highlights
 
@@ -65,4 +65,4 @@ Zara.Engine.exe --pipe-name=... --db-path=... --scan-root=...
 
 ## Roadmap
 
-Next up: wire the security policy gate into file operations, then validate WPF at scale (Spike S2) and build the shell UI. Later phases add content search, embeddings, an agent layer, and Explorer integration.
+Next up: have the Engine use the policy-gated executor (the gate itself, `PolicyGatedShellOperations`, is built and tested), then validate WPF at scale (Spike S2) and build the shell UI. Later phases add content search, embeddings, an agent layer, and Explorer integration.

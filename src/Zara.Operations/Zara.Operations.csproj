@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Zara.Core\Zara.Core.csproj" />
     <ProjectReference Include="..\Zara.Filesystem\Zara.Filesystem.csproj" />
+    <ProjectReference Include="..\Zara.Security\Zara.Security.csproj" />
     <ProjectReference Include="..\Zara.Storage\Zara.Storage.csproj" />
   </ItemGroup>
 
